@@ -11,6 +11,7 @@ import (
 	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -493,5 +494,59 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Пароль успешно изменен. Теперь вы можете войти в систему, используя новый пароль.",
+	})
+}
+
+func (h *AuthHandler) InitDefaultAdmin(c *gin.Context) {
+	var adminCount int64
+	database.DB.Model(&models.User{}).Where("role = ?", models.RoleAdmin).Count(&adminCount)
+
+	if adminCount > 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Администраторы уже существуют. Используйте обычную авторизацию."})
+		return
+	}
+
+	defaultAdminEmail := "admin@system.local"
+	defaultPassword := "Admin123!"
+
+	var existingUser models.User
+	if err := database.DB.Where("email = ?", defaultAdminEmail).First(&existingUser).Error; err == nil {
+		if existingUser.Status == models.UserStatusDeleted {
+			database.DB.Unscoped().Delete(&existingUser)
+		} else {
+			c.JSON(http.StatusConflict, gin.H{"error": "Администратор с таким email уже существует"})
+			return
+		}
+	}
+
+	hashedPassword, err := utils.HashPassword(defaultPassword)
+	if err != nil {
+		h.logger.Error("Ошибка при хешировании пароля админа", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании администратора"})
+		return
+	}
+
+	admin := models.User{
+		ID:            uuid.New(),
+		FullName:      "Администратор",
+		Email:         defaultAdminEmail,
+		Password:      hashedPassword,
+		Role:          models.RoleAdmin,
+		Status:        models.UserStatusActive,
+		EmailVerified: true,
+		AuthProvider:  "email",
+	}
+
+	if err := database.DB.Create(&admin).Error; err != nil {
+		h.logger.Error("Ошибка при создании администратора", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании администратора"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Администратор по умолчанию успешно создан",
+		"email":    defaultAdminEmail,
+		"password": defaultPassword,
+		"warning":  "Не забудьте изменить пароль по умолчанию!",
 	})
 }

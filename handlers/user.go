@@ -41,25 +41,42 @@ func NewUserHandler() *UserHandler {
 // @Failure 404 {object} map[string]string "Пользователь не найден"
 // @Router /user/profile [get]
 func (h *UserHandler) GetProfile(c *gin.Context) {
-	userID, exists := c.Get("userID")
+	userIDValue, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
 		return
 	}
 
+	userID, ok := userIDValue.(uuid.UUID)
+	if !ok {
+		h.logger.Error("Неверный тип userID в контексте", zap.Any("userID", userIDValue))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка авторизации"})
+		return
+	}
+
 	var user models.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		h.logger.Error("Пользователь не найден", zap.Any("userID", userID), zap.Error(err))
+		h.logger.Error("Пользователь не найден", zap.String("userID", userID.String()), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
 		return
 	}
 
+	if user.Status == models.UserStatusDeleted {
+		h.logger.Warn("Попытка доступа к профилю удаленного пользователя", zap.Any("userID", userID))
+		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещен: пользователь удален"})
+		return
+	}
+
 	var userInterests []models.UserInterest
-	database.DB.Preload("Interest").Where("user_id = ?", userID).Find(&userInterests)
+	if err := database.DB.Preload("Interest").Where("user_id = ?", userID).Find(&userInterests).Error; err != nil {
+		h.logger.Warn("Ошибка получения интересов пользователя при получении профиля", zap.String("userID", userID.String()), zap.Error(err))
+	}
 	
 	tags := make([]string, 0, len(userInterests))
 	for _, ui := range userInterests {
-		tags = append(tags, ui.Interest.Name)
+		if ui.Interest.ID != uuid.Nil && ui.Interest.Name != "" {
+			tags = append(tags, ui.Interest.Name)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -94,15 +111,22 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 // @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
 // @Router /user/profile [put]
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
-	userID, exists := c.Get("userID")
+	userIDValue, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
 		return
 	}
 
+	userID, ok := userIDValue.(uuid.UUID)
+	if !ok {
+		h.logger.Error("Неверный тип userID в контексте", zap.Any("userID", userIDValue))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка авторизации"})
+		return
+	}
+
 	var user models.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		h.logger.Error("Пользователь не найден для обновления", zap.Any("userID", userID), zap.Error(err))
+		h.logger.Error("Пользователь не найден для обновления", zap.String("userID", userID.String()), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
 		return
 	}
@@ -244,11 +268,15 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	var userInterests []models.UserInterest
-	database.DB.Preload("Interest").Where("user_id = ?", userID).Find(&userInterests)
+	if err := database.DB.Preload("Interest").Where("user_id = ?", userID).Find(&userInterests).Error; err != nil {
+		h.logger.Warn("Ошибка получения интересов пользователя при обновлении профиля", zap.String("userID", userID.String()), zap.Error(err))
+	}
 	
 	tags := make([]string, 0, len(userInterests))
 	for _, ui := range userInterests {
-		tags = append(tags, ui.Interest.Name)
+		if ui.Interest.ID != uuid.Nil && ui.Interest.Name != "" {
+			tags = append(tags, ui.Interest.Name)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

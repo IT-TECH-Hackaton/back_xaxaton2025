@@ -31,20 +31,38 @@ import (
 )
 
 func initDefaultAdmin() {
-	var adminCount int64
-	database.DB.Model(&models.User{}).Where("role = ?", models.RoleAdmin).Count(&adminCount)
-
-	if adminCount > 0 {
-		return
-	}
-
 	defaultAdminEmail := "admin@system.local"
+	defaultPassword := "Admin123!"
+	
+	logger.GetLogger().Info("Проверка наличия администратора по умолчанию",
+		zap.String("email", defaultAdminEmail),
+	)
+
 	var existingUser models.User
-	if err := database.DB.Where("email = ?", defaultAdminEmail).First(&existingUser).Error; err == nil {
-		return
+	err := database.DB.Where("email = ?", defaultAdminEmail).First(&existingUser).Error
+	if err == nil {
+		if existingUser.Status == models.UserStatusDeleted {
+			logger.GetLogger().Info("Найден удаленный администратор, пересоздание",
+				zap.String("email", defaultAdminEmail),
+			)
+			if err := database.DB.Unscoped().Delete(&existingUser).Error; err != nil {
+				logger.GetLogger().Error("Ошибка при удалении старого администратора", zap.Error(err))
+			}
+		} else {
+			logger.GetLogger().Info("Администратор по умолчанию уже существует",
+				zap.String("email", defaultAdminEmail),
+				zap.String("status", string(existingUser.Status)),
+				zap.String("role", string(existingUser.Role)),
+			)
+			return
+		}
+	} else {
+		logger.GetLogger().Info("Администратор по умолчанию не найден, создание нового",
+			zap.String("email", defaultAdminEmail),
+		)
 	}
 
-	hashedPassword, err := utils.HashPassword("admin123")
+	hashedPassword, err := utils.HashPassword(defaultPassword)
 	if err != nil {
 		logger.GetLogger().Error("Ошибка при хешировании пароля админа", zap.Error(err))
 		return
@@ -62,13 +80,18 @@ func initDefaultAdmin() {
 	}
 
 	if err := database.DB.Create(&admin).Error; err != nil {
-		logger.GetLogger().Error("Ошибка при создании администратора по умолчанию", zap.Error(err))
+		logger.GetLogger().Error("Ошибка при создании администратора по умолчанию",
+			zap.Error(err),
+			zap.String("email", defaultAdminEmail),
+		)
 		return
 	}
 
-	logger.GetLogger().Info("Создан администратор по умолчанию",
+	logger.GetLogger().Info("✅ Создан администратор по умолчанию",
 		zap.String("email", defaultAdminEmail),
-		zap.String("warning", "Не забудьте изменить пароль по умолчанию!"),
+		zap.String("password", defaultPassword),
+		zap.String("id", admin.ID.String()),
+		zap.String("warning", "⚠️ Не забудьте изменить пароль по умолчанию!"),
 	)
 }
 

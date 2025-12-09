@@ -15,6 +15,14 @@ import (
 
 func main() {
 	config.LoadConfig()
+	
+	fmt.Printf("Подключение к БД:\n")
+	fmt.Printf("  Host: %s\n", config.AppConfig.DBHost)
+	fmt.Printf("  Port: %s\n", config.AppConfig.DBPort)
+	fmt.Printf("  User: %s\n", config.AppConfig.DBUser)
+	fmt.Printf("  Database: %s\n", config.AppConfig.DBName)
+	fmt.Println()
+	
 	database.Connect()
 
 	if len(os.Args) < 4 {

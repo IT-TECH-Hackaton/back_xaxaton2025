@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -371,70 +372,117 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 // @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
 // @Router /events [post]
 func (h *EventHandler) CreateEvent(c *gin.Context) {
-	title := c.PostForm("title")
-	fullDescription := c.PostForm("fullDescription")
-	shortDescription := c.PostForm("shortDescription")
-	startDateStr := c.PostForm("startDate")
-	endDateStr := c.PostForm("endDate")
-	imageURL := c.PostForm("imageURL")
-	paymentInfo := c.PostForm("paymentInfo")
-	address := c.PostForm("address")
-	yandexMapLink := c.PostForm("yandexMapLink")
+	var title, fullDescription, shortDescription, startDateStr, endDateStr, imageURL, paymentInfo, address, yandexMapLink string
+	var maxParticipants *int
+	var latitude, longitude *float64
+	var categoryIDs []uuid.UUID
+	var tags []string
+	var participantIDs []uuid.UUID
+
+	contentType := c.GetHeader("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		var req dto.CreateEventRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			h.logger.Warn("Неверный формат JSON при создании события", zap.Error(err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат данных: " + err.Error()})
+			return
+		}
+		title = req.Title
+		fullDescription = req.FullDescription
+		shortDescription = req.ShortDescription
+		startDateStr = req.StartDate.Format(time.RFC3339)
+		endDateStr = req.EndDate.Format(time.RFC3339)
+		imageURL = req.ImageURL
+		paymentInfo = req.PaymentInfo
+		maxParticipants = req.MaxParticipants
+		categoryIDs = req.CategoryIDs
+		tags = req.Tags
+		address = req.Address
+		latitude = req.Latitude
+		longitude = req.Longitude
+		yandexMapLink = req.YandexMapLink
+		participantIDs = req.ParticipantIDs
+	} else {
+		title = c.PostForm("title")
+		fullDescription = c.PostForm("fullDescription")
+		shortDescription = c.PostForm("shortDescription")
+		startDateStr = c.PostForm("startDate")
+		endDateStr = c.PostForm("endDate")
+		imageURL = c.PostForm("imageURL")
+		paymentInfo = c.PostForm("paymentInfo")
+		address = c.PostForm("address")
+		yandexMapLink = c.PostForm("yandexMapLink")
+
+		if mpStr := c.PostForm("maxParticipants"); mpStr != "" {
+			if mp, err := strconv.Atoi(mpStr); err == nil && mp > 0 {
+				maxParticipants = &mp
+			}
+		}
+
+		if latStr := c.PostForm("latitude"); latStr != "" {
+			if lat, err := strconv.ParseFloat(latStr, 64); err == nil {
+				latitude = &lat
+			}
+		}
+
+		if lonStr := c.PostForm("longitude"); lonStr != "" {
+			if lon, err := strconv.ParseFloat(lonStr, 64); err == nil {
+				longitude = &lon
+			}
+		}
+
+		if catIDsStr := c.PostFormArray("categoryIDs"); len(catIDsStr) > 0 {
+			for _, catIDStr := range catIDsStr {
+				if catID, err := uuid.Parse(catIDStr); err == nil {
+					categoryIDs = append(categoryIDs, catID)
+				}
+			}
+		}
+
+		if tagsStr := c.PostFormArray("tags"); len(tagsStr) > 0 {
+			tags = tagsStr
+		}
+	}
 
 	if title == "" || fullDescription == "" || startDateStr == "" || endDateStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Необходимо указать: title, fullDescription, startDate, endDate"})
+		missing := []string{}
+		if title == "" {
+			missing = append(missing, "title")
+		}
+		if fullDescription == "" {
+			missing = append(missing, "fullDescription")
+		}
+		if startDateStr == "" {
+			missing = append(missing, "startDate")
+		}
+		if endDateStr == "" {
+			missing = append(missing, "endDate")
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Необходимо указать обязательные поля: " + strings.Join(missing, ", ")})
 		return
 	}
 
 	startDate, err := time.Parse(time.RFC3339, startDateStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат startDate. Используйте RFC3339 (например: 2024-12-10T10:00:00Z)"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат startDate. Используйте RFC3339 (например: 2024-12-10T10:00:00Z). Получено: " + startDateStr})
 		return
 	}
 
 	endDate, err := time.Parse(time.RFC3339, endDateStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат endDate. Используйте RFC3339 (например: 2024-12-10T18:00:00Z)"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат endDate. Используйте RFC3339 (например: 2024-12-10T18:00:00Z). Получено: " + endDateStr})
 		return
 	}
 
-	var maxParticipants *int
-	if mpStr := c.PostForm("maxParticipants"); mpStr != "" {
-		if mp, err := strconv.Atoi(mpStr); err == nil && mp > 0 {
-			maxParticipants = &mp
-		}
+	var fileHeader *multipart.FileHeader
+	var fileErr error
+	if !strings.HasPrefix(contentType, "application/json") {
+		fileHeader, fileErr = c.FormFile("image")
+	} else {
+		fileErr = http.ErrMissingFile
 	}
 
-	var latitude *float64
-	if latStr := c.PostForm("latitude"); latStr != "" {
-		if lat, err := strconv.ParseFloat(latStr, 64); err == nil {
-			latitude = &lat
-		}
-	}
-
-	var longitude *float64
-	if lonStr := c.PostForm("longitude"); lonStr != "" {
-		if lon, err := strconv.ParseFloat(lonStr, 64); err == nil {
-			longitude = &lon
-		}
-	}
-
-	var categoryIDs []uuid.UUID
-	if catIDsStr := c.PostFormArray("categoryIDs"); len(catIDsStr) > 0 {
-		for _, catIDStr := range catIDsStr {
-			if catID, err := uuid.Parse(catIDStr); err == nil {
-				categoryIDs = append(categoryIDs, catID)
-			}
-		}
-	}
-
-	var tags []string
-	if tagsStr := c.PostFormArray("tags"); len(tagsStr) > 0 {
-		tags = tagsStr
-	}
-
-	fileHeader, err := c.FormFile("image")
-	if err == nil {
+	if fileErr == nil && fileHeader != nil {
 		if fileHeader.Size > 10*1024*1024 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Размер файла не должен превышать 10MB"})
 			return
@@ -507,7 +555,9 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 		}
 
 		imageURL = fmt.Sprintf("/uploads/events/%s", filename)
-	} else if imageURL == "" {
+	}
+
+	if imageURL == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Необходимо указать imageURL или загрузить файл image"})
 		return
 	}
@@ -619,14 +669,16 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 	communityService := services.NewCommunityService()
 	go communityService.NotifyCommunitiesAboutEvent(&event)
 
-	participantIDsStr := c.PostFormArray("participantIDs")
-	if len(participantIDsStr) > 0 {
-		var participantIDs []uuid.UUID
+	if !strings.HasPrefix(contentType, "application/json") {
+		participantIDsStr := c.PostFormArray("participantIDs")
 		for _, pidStr := range participantIDsStr {
 			if pid, err := uuid.Parse(pidStr); err == nil {
 				participantIDs = append(participantIDs, pid)
 			}
 		}
+	}
+
+	if len(participantIDs) > 0 {
 
 		if len(participantIDs) > 0 {
 			var users []models.User

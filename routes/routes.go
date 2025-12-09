@@ -58,6 +58,7 @@ func SetupRoutes() *gin.Engine {
 			auth.GET("/yandex", middleware.RateLimitMiddleware("10-M"), authHandler.YandexAuth)
 			auth.GET("/yandex/callback", authHandler.YandexCallback)
 			auth.POST("/yandex/fake", middleware.RateLimitMiddleware("10-M"), authHandler.FakeYandexAuth)
+			auth.POST("/init-admin", middleware.RateLimitMiddleware("1-H"), authHandler.InitDefaultAdmin)
 		}
 
 		upload := api.Group("/upload")

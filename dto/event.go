@@ -12,12 +12,12 @@ type CreateEventRequest struct {
 	FullDescription string     `json:"fullDescription" binding:"required"`
 	StartDate       time.Time  `json:"startDate" binding:"required"`
 	EndDate         time.Time  `json:"endDate" binding:"required"`
-	ImageURL        string     `json:"imageURL" binding:"required"`
+	ImageURL        string     `json:"imageURL"`
 	PaymentInfo     string     `json:"paymentInfo"`
 	MaxParticipants *int       `json:"maxParticipants"`
 	ParticipantIDs  []uuid.UUID `json:"participantIDs"`
-	CategoryIDs     []uuid.UUID `json:"categoryIDs"` // Категории события
-	Tags            []string   `json:"tags"` // Теги события (массив строк)
+	CategoryIDs     []uuid.UUID `json:"categoryIDs"`
+	Tags            []string   `json:"tags"`
 	Address         string     `json:"address"`
 	Latitude        *float64   `json:"latitude"`
 	Longitude       *float64   `json:"longitude"`
