@@ -276,6 +276,13 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 		return
 	}
 
+	if len(req.Tags) > 0 {
+		if valid, errMsg := utils.ValidateTags(req.Tags); !valid {
+			c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
+			return
+		}
+	}
+
 	userID, _ := c.Get("userID")
 	organizerID := userID.(uuid.UUID)
 
@@ -453,6 +460,10 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 	}
 
 	if req.Tags != nil {
+		if valid, errMsg := utils.ValidateTags(req.Tags); !valid {
+			c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
+			return
+		}
 		event.Tags = req.Tags
 	}
 

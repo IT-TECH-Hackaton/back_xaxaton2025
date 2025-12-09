@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"bekend/database"
-	"bekend/dto"
 	"bekend/models"
 	"bekend/utils"
 
@@ -117,7 +116,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 
 	fileHeader, err := c.FormFile("avatar")
 	if err == nil {
-		if fileHeader.Size > 10*1024*1024 {
+		if fileHeader.Size > utils.MaxAvatarFileSize {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Размер файла не должен превышать 10MB"})
 			return
 		}

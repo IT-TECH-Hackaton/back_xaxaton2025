@@ -12,11 +12,9 @@ import (
 	"bekend/database"
 	"bekend/dto"
 	"bekend/models"
-	"bekend/services"
 	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 type YandexUserInfo struct {
@@ -35,7 +33,7 @@ type YandexTokenResponse struct {
 	ExpiresIn   int    `json:"expires_in"`
 }
 
-func YandexAuth(c *gin.Context) {
+func (h *AuthHandler) YandexAuth(c *gin.Context) {
 	// Если включена фейковая авторизация, возвращаем специальный ответ
 	if config.AppConfig.FakeYandexAuth {
 		c.JSON(http.StatusOK, gin.H{
@@ -65,7 +63,7 @@ func YandexAuth(c *gin.Context) {
 	})
 }
 
-func YandexCallback(c *gin.Context) {
+func (h *AuthHandler) YandexCallback(c *gin.Context) {
 	code := c.Query("code")
 	_ = c.Query("state") // State можно использовать для проверки CSRF
 
@@ -239,7 +237,7 @@ func (h *AuthHandler) getYandexUserInfo(accessToken string) (*YandexUserInfo, er
 	return &userInfo, nil
 }
 
-func FakeYandexAuth(c *gin.Context) {
+func (h *AuthHandler) FakeYandexAuth(c *gin.Context) {
 	if !config.AppConfig.FakeYandexAuth {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Фейковая авторизация отключена"})
 		return

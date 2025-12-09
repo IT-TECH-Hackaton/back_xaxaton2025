@@ -34,7 +34,7 @@ func RateLimitMiddleware(rate string) gin.HandlerFunc {
 	if rate != "" {
 		parsed, err := limiter.NewRateFromFormatted(rate)
 		if err == nil {
-			instance := limiter.New(store, *parsed)
+			instance := limiter.New(store, parsed)
 			return createRateLimitHandler(instance)
 		}
 	}

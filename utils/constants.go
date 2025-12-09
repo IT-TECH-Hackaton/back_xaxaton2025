@@ -18,5 +18,6 @@ const (
 	MaxMapLinkLength          = 1000
 	MaxPaymentInfoLength      = 2000
 	EventReminderHours        = 24
+	MaxAvatarFileSize         = 10 * 1024 * 1024 // 10MB
 )
 

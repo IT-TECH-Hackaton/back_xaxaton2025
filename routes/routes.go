@@ -1,6 +1,9 @@
 package routes
 
 import (
+	"strings"
+
+	"bekend/config"
 	"bekend/handlers"
 	"bekend/middleware"
 
@@ -13,12 +16,16 @@ func SetupRoutes() *gin.Engine {
 
 	r.Static("/uploads", "./uploads")
 
-	config := cors.DefaultConfig()
-	config.AllowOrigins = []string{"http://localhost:5173"}
-	config.AllowCredentials = true
-	config.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
-	config.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}
-	r.Use(cors.New(config))
+	corsConfig := cors.DefaultConfig()
+	origins := strings.Split(config.AppConfig.CORSAllowOrigins, ",")
+	for i := range origins {
+		origins[i] = strings.TrimSpace(origins[i])
+	}
+	corsConfig.AllowOrigins = origins
+	corsConfig.AllowCredentials = true
+	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
+	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}
+	r.Use(cors.New(corsConfig))
 
 	authHandler := handlers.NewAuthHandler()
 	userHandler := handlers.NewUserHandler()

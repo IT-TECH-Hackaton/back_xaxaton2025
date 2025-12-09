@@ -104,15 +104,3 @@ type EventDetailResponse struct {
 	Organizer        UserInfo       `json:"organizer"`
 }
 
-type PaginationResponse struct {
-	Data       interface{} `json:"data"`
-	Pagination Pagination  `json:"pagination"`
-}
-
-type Pagination struct {
-	Page       int   `json:"page"`
-	Limit      int   `json:"limit"`
-	Total      int64 `json:"total"`
-	TotalPages int   `json:"totalPages"`
-}
-

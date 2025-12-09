@@ -51,7 +51,7 @@ func initDefaultAdmin() {
 
 	logger.GetLogger().Info("Создан администратор по умолчанию",
 		zap.String("email", defaultAdminEmail),
-		zap.String("password", "admin123"),
+		zap.String("warning", "Не забудьте изменить пароль по умолчанию!"),
 	)
 }
 

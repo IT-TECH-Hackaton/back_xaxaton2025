@@ -153,13 +153,26 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 		AuthProvider:  "email",
 	}
 
-	if err := database.DB.Create(&user).Error; err != nil {
+	tx := database.DB.Begin()
+	if err := tx.Create(&user).Error; err != nil {
+		tx.Rollback()
 		h.logger.Error("Ошибка создания пользователя после подтверждения", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании учетной записи"})
 		return
 	}
 
-	database.DB.Delete(&registrationPending)
+	if err := tx.Delete(&registrationPending).Error; err != nil {
+		tx.Rollback()
+		h.logger.Error("Ошибка удаления записи регистрации", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при завершении регистрации"})
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		h.logger.Error("Ошибка коммита транзакции", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при завершении регистрации"})
+		return
+	}
 
 	go func() {
 		if err := h.emailService.SendWelcomeEmail(user.Email, user.FullName); err != nil {

@@ -30,6 +30,7 @@ type Config struct {
 	YandexRedirectURI  string
 	FakeYandexAuth     bool // Фейковая авторизация через Яндекс (для разработки)
 	YandexGeocoderAPIKey string // API ключ для Яндекс.Геокодера
+	CORSAllowOrigins   string // Разрешенные источники для CORS (через запятую)
 }
 
 var AppConfig *Config
@@ -58,6 +59,7 @@ func LoadConfig() {
 		YandexRedirectURI:  getEnv("YANDEX_REDIRECT_URI", "http://localhost:8081/api/auth/yandex/callback"),
 		FakeYandexAuth:     getEnv("FAKE_YANDEX_AUTH", "false") == "true",
 		YandexGeocoderAPIKey: getEnv("YANDEX_GEOCODER_API_KEY", ""),
+		CORSAllowOrigins:   getEnv("CORS_ALLOW_ORIGINS", "http://localhost:5173"),
 	}
 
 	expirationStr := getEnv("JWT_EXPIRATION", "24h")

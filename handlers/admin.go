@@ -1,12 +1,10 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
-	"bekend/config"
 	"bekend/database"
 	"bekend/dto"
 	"bekend/models"
@@ -14,7 +12,6 @@ import (
 	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 

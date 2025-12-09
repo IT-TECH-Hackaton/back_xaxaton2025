@@ -1,7 +1,5 @@
 package dto
 
-import "github.com/google/uuid"
-
 type CreateCommunityRequest struct {
 	Name        string    `json:"name" binding:"required"`
 	Description string    `json:"description"`

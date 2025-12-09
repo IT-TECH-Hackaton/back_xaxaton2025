@@ -33,8 +33,9 @@ type AuthResponse struct {
 }
 
 type UserInfo struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	ID       string `json:"id"`
+	FullName string `json:"fullName"`
+	Email    string `json:"email"`
+	Role     string `json:"role"`
 }
 

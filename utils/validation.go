@@ -2,6 +2,7 @@ package utils
 
 import (
 	"regexp"
+	"strings"
 	"unicode"
 )
 
@@ -87,5 +88,27 @@ func ValidateURL(url string) bool {
 	urlRegex := regexp.MustCompile(`^https?://[^\s/$.?#].[^\s]*$`)
 	localPathRegex := regexp.MustCompile(`^/uploads/[^\s]*$`)
 	return urlRegex.MatchString(url) || localPathRegex.MatchString(url)
+}
+
+func ValidateTags(tags []string) (bool, string) {
+	if len(tags) > 15 {
+		return false, "Максимальное количество тегов - 15"
+	}
+	
+	seen := make(map[string]bool)
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			return false, "Теги не могут быть пустыми"
+		}
+		if len([]rune(tag)) > 50 {
+			return false, "Длина каждого тега не должна превышать 50 символов"
+		}
+		if seen[strings.ToLower(tag)] {
+			return false, "Теги не должны дублироваться"
+		}
+		seen[strings.ToLower(tag)] = true
+	}
+	return true, ""
 }
 

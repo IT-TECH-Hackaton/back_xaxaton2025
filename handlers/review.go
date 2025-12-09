@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"bekend/database"
+	"bekend/dto"
 	"bekend/models"
 	"bekend/utils"
 
@@ -131,19 +132,23 @@ func (h *ReviewHandler) GetEventReviews(c *gin.Context) {
 		return
 	}
 
-	result := make([]gin.H, len(reviews))
+	result := make([]dto.ReviewResponse, len(reviews))
 	var totalRating int
 	for i, review := range reviews {
 		totalRating += review.Rating
-		result[i] = gin.H{
-			"id": review.ID,
-			"rating": review.Rating,
-			"comment": review.Comment,
-			"user": gin.H{
-				"id": review.User.ID,
-				"fullName": review.User.FullName,
+		result[i] = dto.ReviewResponse{
+			ID:        review.ID.String(),
+			EventID:   review.EventID.String(),
+			UserID:    review.UserID.String(),
+			Rating:    review.Rating,
+			Comment:   review.Comment,
+			User: dto.UserInfo{
+				ID:       review.User.ID.String(),
+				FullName: review.User.FullName,
+				Email:    review.User.Email,
 			},
-			"createdAt": review.CreatedAt,
+			CreatedAt: review.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			UpdatedAt: review.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		}
 	}
 
