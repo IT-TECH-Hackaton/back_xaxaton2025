@@ -45,6 +45,7 @@ func NewEventHandler() *EventHandler {
 // @Param page query int false "Номер страницы (по умолчанию: 1)"
 // @Param limit query int false "Количество элементов на странице (по умолчанию: 20, максимум: 100)"
 // @Param search query string false "Поиск по названию и описанию (1-200 символов)"
+// @Param status query string false "Фильтр по статусу: Активное, Прошедшее, Отклоненное (для обычных пользователей доступны только Активное и Прошедшее)"
 // @Param categoryIDs query []string false "Фильтр по категориям (массив UUID)"
 // @Param tags query []string false "Фильтр по тегам (массив строк)"
 // @Param dateFrom query string false "Фильтр по дате начала (YYYY-MM-DD)"
@@ -61,6 +62,7 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 		userID = nil
 	}
 	tab := c.Query("tab")
+	statusFilter := c.Query("status")
 	search := c.Query("search")
 	categoryIDs := c.QueryArray("categoryIDs")
 	tags := c.QueryArray("tags")
@@ -108,7 +110,16 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 		}
 	}
 
-	query = query.Where("status != ?", models.EventStatusRejected)
+	if statusFilter != "" {
+		if models.IsValidEventStatus(models.EventStatus(statusFilter)) {
+			query = query.Where("status = ?", models.EventStatus(statusFilter))
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный статус. Допустимые значения: Активное, Прошедшее, Отклоненное"})
+			return
+		}
+	} else {
+		query = query.Where("status != ?", models.EventStatusRejected)
+	}
 
 	if search != "" {
 		if !utils.ValidateStringLength(search, 1, 200) {
@@ -587,8 +598,16 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 	}
 
 	if len(categoryIDs) > 0 {
+		if len(categoryIDs) > 10 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Максимальное количество категорий на событие - 10"})
+			return
+		}
 		var categories []models.Category
 		if err := database.DB.Where("id IN (?)", categoryIDs).Find(&categories).Error; err == nil {
+			if len(categories) != len(categoryIDs) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Некоторые категории не найдены"})
+				return
+			}
 			if err := database.DB.Model(&event).Association("Categories").Append(categories); err != nil {
 				h.logger.Error("Ошибка добавления категорий к событию", zap.String("eventID", event.ID.String()), zap.Error(err))
 			}
@@ -775,8 +794,16 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 	}
 
 	if req.CategoryIDs != nil {
+		if len(req.CategoryIDs) > 10 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Максимальное количество категорий на событие - 10"})
+			return
+		}
 		var categories []models.Category
 		if err := database.DB.Where("id IN (?)", req.CategoryIDs).Find(&categories).Error; err == nil {
+			if len(categories) != len(req.CategoryIDs) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Некоторые категории не найдены"})
+				return
+			}
 			if err := database.DB.Model(&event).Association("Categories").Replace(categories); err != nil {
 				h.logger.Error("Ошибка обновления категорий события", zap.String("eventID", eventID), zap.Error(err))
 			}
@@ -820,10 +847,28 @@ func (h *EventHandler) DeleteEvent(c *gin.Context) {
 		return
 	}
 
-	if err := database.DB.Where("id = ?", eventID).Delete(&models.Event{}).Error; err != nil {
+	var event models.Event
+	if err := database.DB.Where("id = ?", eventID).First(&event).Error; err != nil {
+		h.logger.Error("Событие не найдено для удаления", zap.String("eventID", eventID), zap.Error(err))
+		c.JSON(http.StatusNotFound, gin.H{"error": "Событие не найдено"})
+		return
+	}
+
+	if err := database.DB.Delete(&event).Error; err != nil {
 		h.logger.Error("Ошибка при удалении события из БД", zap.String("eventID", eventID), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при удалении события"})
 		return
+	}
+
+	var participants []models.EventParticipant
+	database.DB.Where("event_id = ?", eventID).Find(&participants)
+	for _, p := range participants {
+		var user models.User
+		if err := database.DB.Where("id = ?", p.UserID).First(&user).Error; err == nil {
+			go h.emailService.SendEventNotification(user.Email, event.Title, "Событие было отменено организатором.")
+		} else {
+			h.logger.Error("Ошибка получения пользователя для уведомления об отмене события", zap.Any("userID", p.UserID), zap.Error(err))
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Событие удалено"})

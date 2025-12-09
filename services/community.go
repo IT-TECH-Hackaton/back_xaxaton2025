@@ -1,6 +1,8 @@
 package services
 
 import (
+	"strings"
+
 	"bekend/database"
 	"bekend/models"
 	"bekend/utils"
@@ -49,6 +51,37 @@ func (cs *CommunityService) checkEventMatchesCommunityInterests(event *models.Ev
 		return false
 	}
 
+	communityInterestIDs := make(map[uuid.UUID]bool)
+	communityInterestCategories := make(map[string]bool)
+	communityInterestNames := make(map[string]bool)
+
+	for _, interest := range community.Interests {
+		communityInterestIDs[interest.ID] = true
+		if interest.Category != "" {
+			communityInterestCategories[interest.Category] = true
+		}
+		communityInterestNames[interest.Name] = true
+	}
+
+	if err := database.DB.Preload("Categories").Where("id = ?", event.ID).First(event).Error; err != nil {
+		cs.logger.Error("Ошибка загрузки категорий события", zap.Error(err))
+	}
+
+	for _, category := range event.Categories {
+		if communityInterestCategories[category.Name] {
+			return true
+		}
+	}
+
+	for _, tag := range event.Tags {
+		tagLower := strings.ToLower(strings.TrimSpace(tag))
+		for interestName := range communityInterestNames {
+			if strings.Contains(strings.ToLower(interestName), tagLower) || strings.Contains(tagLower, strings.ToLower(interestName)) {
+				return true
+			}
+		}
+	}
+
 	var eventParticipants []models.EventParticipant
 	if err := database.DB.Preload("User").Where("event_id = ?", event.ID).Find(&eventParticipants).Error; err != nil {
 		cs.logger.Error("Ошибка получения участников события", zap.Error(err))
@@ -57,11 +90,6 @@ func (cs *CommunityService) checkEventMatchesCommunityInterests(event *models.Ev
 
 	if len(eventParticipants) == 0 {
 		return false
-	}
-
-	communityInterestIDs := make(map[uuid.UUID]bool)
-	for _, interest := range community.Interests {
-		communityInterestIDs[interest.ID] = true
 	}
 
 	for _, participant := range eventParticipants {
