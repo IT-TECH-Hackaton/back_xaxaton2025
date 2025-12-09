@@ -14,6 +14,15 @@ func NewHealthHandler() *HealthHandler {
 	return &HealthHandler{}
 }
 
+// HealthCheck godoc
+// @Summary Проверка здоровья сервиса
+// @Description Проверка доступности сервиса и подключения к базе данных
+// @Tags Система
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]string "Сервис работает"
+// @Failure 503 {object} map[string]string "Сервис недоступен"
+// @Router /health [get]
 func (h *HealthHandler) HealthCheck(c *gin.Context) {
 	sqlDB, err := database.DB.DB()
 	if err != nil {

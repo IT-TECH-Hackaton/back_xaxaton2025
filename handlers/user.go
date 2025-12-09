@@ -29,6 +29,17 @@ func NewUserHandler() *UserHandler {
 	}
 }
 
+// GetProfile godoc
+// @Summary Получить профиль пользователя
+// @Description Получение информации о текущем авторизованном пользователе
+// @Tags Пользователь
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Профиль пользователя"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 404 {object} map[string]string "Пользователь не найден"
+// @Router /user/profile [get]
 func (h *UserHandler) GetProfile(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -66,6 +77,22 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 	})
 }
 
+// UpdateProfile godoc
+// @Summary Обновить профиль пользователя
+// @Description Обновление профиля пользователя (ФИО, Telegram, аватар)
+// @Tags Пользователь
+// @Accept multipart/form-data
+// @Produce json
+// @Security BearerAuth
+// @Param fullName formData string false "ФИО пользователя (только русские буквы, 2-100 символов)"
+// @Param telegram formData string false "Telegram username (5-32 символа, латиница, цифры, подчеркивания)"
+// @Param avatar formData file false "Аватар пользователя (jpg, jpeg, png, gif, webp, до 10MB)"
+// @Success 200 {object} map[string]interface{} "Профиль обновлен"
+// @Failure 400 {object} map[string]string "Ошибка валидации"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 404 {object} map[string]string "Пользователь не найден"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /user/profile [put]
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {

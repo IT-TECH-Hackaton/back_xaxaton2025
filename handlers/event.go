@@ -30,6 +30,26 @@ func NewEventHandler() *EventHandler {
 	}
 }
 
+// GetEvents godoc
+// @Summary Получить список событий
+// @Description Получение списка событий с фильтрацией, поиском и пагинацией
+// @Tags События
+// @Accept json
+// @Produce json
+// @Param tab query string false "Тип фильтрации: active, my, past"
+// @Param page query int false "Номер страницы (по умолчанию: 1)"
+// @Param limit query int false "Количество элементов на странице (по умолчанию: 20, максимум: 100)"
+// @Param search query string false "Поиск по названию и описанию (1-200 символов)"
+// @Param categoryIDs query []string false "Фильтр по категориям (массив UUID)"
+// @Param tags query []string false "Фильтр по тегам (массив строк)"
+// @Param dateFrom query string false "Фильтр по дате начала (YYYY-MM-DD)"
+// @Param dateTo query string false "Фильтр по дате окончания (YYYY-MM-DD)"
+// @Param sortBy query string false "Сортировка: startDate, createdAt, participantsCount (по умолчанию: startDate)"
+// @Param sortOrder query string false "Порядок сортировки: ASC, DESC (по умолчанию: ASC)"
+// @Success 200 {object} dto.PaginationResponse{data=[]dto.EventResponse} "Список событий с пагинацией"
+// @Failure 400 {object} map[string]string "Ошибка валидации параметров"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /events [get]
 func (h *EventHandler) GetEvents(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -175,25 +195,25 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 				Name: cat.Name,
 			}
 		}
-		
+
 		result[i] = dto.EventResponse{
-			ID:               event.ID.String(),
-			Title:            event.Title,
-			ShortDescription: event.ShortDescription,
-			FullDescription:  event.FullDescription,
-			StartDate:        event.StartDate,
-			EndDate:          event.EndDate,
-			ImageURL:         event.ImageURL,
-			PaymentInfo:      event.PaymentInfo,
-			MaxParticipants:  event.MaxParticipants,
-			Status:           string(event.Status),
+			ID:                event.ID.String(),
+			Title:             event.Title,
+			ShortDescription:  event.ShortDescription,
+			FullDescription:   event.FullDescription,
+			StartDate:         event.StartDate,
+			EndDate:           event.EndDate,
+			ImageURL:          event.ImageURL,
+			PaymentInfo:       event.PaymentInfo,
+			MaxParticipants:   event.MaxParticipants,
+			Status:            string(event.Status),
 			ParticipantsCount: event.GetParticipantsCount(),
-			Categories:       categories,
-			Tags:             event.Tags,
-			Address:          event.Address,
-			Latitude:         event.Latitude,
-			Longitude:        event.Longitude,
-			YandexMapLink:    event.YandexMapLink,
+			Categories:        categories,
+			Tags:              event.Tags,
+			Address:           event.Address,
+			Latitude:          event.Latitude,
+			Longitude:         event.Longitude,
+			YandexMapLink:     event.YandexMapLink,
 			Organizer: dto.UserInfo{
 				ID:       event.Organizer.ID.String(),
 				FullName: event.Organizer.FullName,
@@ -214,6 +234,18 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 	})
 }
 
+// GetEvent godoc
+// @Summary Получить детальную информацию о событии
+// @Description Получение полной информации о событии, включая участников, отзывы и рейтинг
+// @Tags События
+// @Accept json
+// @Produce json
+// @Param id path string true "UUID события"
+// @Success 200 {object} dto.EventDetailResponse "Детальная информация о событии"
+// @Failure 400 {object} map[string]string "Неверный формат ID"
+// @Failure 403 {object} map[string]string "Доступ запрещен (отклоненное событие)"
+// @Failure 404 {object} map[string]string "Событие не найдено"
+// @Router /events/{id} [get]
 func (h *EventHandler) GetEvent(c *gin.Context) {
 	eventID := c.Param("id")
 
@@ -267,26 +299,26 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, dto.EventDetailResponse{
-		ID:               event.ID.String(),
-		Title:            event.Title,
-		ShortDescription: event.ShortDescription,
-		FullDescription:  event.FullDescription,
-		StartDate:        event.StartDate,
-		EndDate:          event.EndDate,
-		ImageURL:         event.ImageURL,
-		PaymentInfo:      event.PaymentInfo,
-		MaxParticipants:  event.MaxParticipants,
-		Status:           string(event.Status),
+		ID:                event.ID.String(),
+		Title:             event.Title,
+		ShortDescription:  event.ShortDescription,
+		FullDescription:   event.FullDescription,
+		StartDate:         event.StartDate,
+		EndDate:           event.EndDate,
+		ImageURL:          event.ImageURL,
+		PaymentInfo:       event.PaymentInfo,
+		MaxParticipants:   event.MaxParticipants,
+		Status:            string(event.Status),
 		ParticipantsCount: event.GetParticipantsCount(),
-		IsParticipant:    isParticipant,
-		AverageRating:    avgRating,
-		TotalReviews:     totalReviews,
-		Categories:       categories,
-		Tags:             event.Tags,
-		Address:          event.Address,
-		Latitude:         event.Latitude,
-		Longitude:        event.Longitude,
-		YandexMapLink:    event.YandexMapLink,
+		IsParticipant:     isParticipant,
+		AverageRating:     avgRating,
+		TotalReviews:      totalReviews,
+		Categories:        categories,
+		Tags:              event.Tags,
+		Address:           event.Address,
+		Latitude:          event.Latitude,
+		Longitude:         event.Longitude,
+		YandexMapLink:     event.YandexMapLink,
 		Organizer: dto.UserInfo{
 			ID:       event.Organizer.ID.String(),
 			FullName: event.Organizer.FullName,
@@ -295,6 +327,19 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 	})
 }
 
+// CreateEvent godoc
+// @Summary Создать новое событие
+// @Description Создание нового события с возможностью указания категорий, тегов и участников
+// @Tags События
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.CreateEventRequest true "Данные для создания события"
+// @Success 200 {object} map[string]interface{} "Событие создано"
+// @Failure 400 {object} map[string]string "Ошибка валидации"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /events [post]
 func (h *EventHandler) CreateEvent(c *gin.Context) {
 	var req dto.CreateEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -427,6 +472,21 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 	})
 }
 
+// UpdateEvent godoc
+// @Summary Обновить событие
+// @Description Обновление данных события (все поля необязательны)
+// @Tags События
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "UUID события"
+// @Param request body dto.UpdateEventRequest true "Данные для обновления"
+// @Success 200 {object} map[string]string "Событие обновлено"
+// @Failure 400 {object} map[string]string "Ошибка валидации"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 404 {object} map[string]string "Событие не найдено"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /events/{id} [put]
 func (h *EventHandler) UpdateEvent(c *gin.Context) {
 	eventID := c.Param("id")
 
@@ -576,6 +636,19 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Событие обновлено"})
 }
 
+// DeleteEvent godoc
+// @Summary Удалить событие
+// @Description Мягкое удаление события (помечается как удаленное)
+// @Tags События
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "UUID события"
+// @Success 200 {object} map[string]string "Событие удалено"
+// @Failure 400 {object} map[string]string "Неверный формат ID"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /events/{id} [delete]
 func (h *EventHandler) DeleteEvent(c *gin.Context) {
 	eventID := c.Param("id")
 
@@ -593,6 +666,20 @@ func (h *EventHandler) DeleteEvent(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Событие удалено"})
 }
 
+// JoinEvent godoc
+// @Summary Присоединиться к событию
+// @Description Подтверждение участия в событии
+// @Tags События
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "UUID события"
+// @Success 200 {object} map[string]string "Участие подтверждено"
+// @Failure 400 {object} map[string]interface{} "Событие не активное, лимит участников, уже участвуете"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 404 {object} map[string]string "Событие не найдено"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /events/{id}/join [post]
 func (h *EventHandler) JoinEvent(c *gin.Context) {
 	eventID := c.Param("id")
 
@@ -657,6 +744,20 @@ func (h *EventHandler) JoinEvent(c *gin.Context) {
 	})
 }
 
+// LeaveEvent godoc
+// @Summary Покинуть событие
+// @Description Отмена участия в событии
+// @Tags События
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "UUID события"
+// @Success 200 {object} map[string]string "Участие отменено"
+// @Failure 400 {object} map[string]string "Неверный формат ID"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 404 {object} map[string]string "Участие не найдено"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /events/{id}/leave [delete]
 func (h *EventHandler) LeaveEvent(c *gin.Context) {
 	eventID := c.Param("id")
 
@@ -701,6 +802,22 @@ func (h *EventHandler) LeaveEvent(c *gin.Context) {
 	})
 }
 
+// ExportParticipants godoc
+// @Summary Экспорт участников события
+// @Description Экспорт списка участников события в CSV или XLSX формате
+// @Tags События
+// @Accept json
+// @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Produce text/csv
+// @Security BearerAuth
+// @Param id path string true "UUID события"
+// @Param format query string false "Формат экспорта: csv или xlsx (по умолчанию: xlsx)"
+// @Success 200 {file} file "Файл с участниками"
+// @Failure 400 {object} map[string]string "Неверный формат ID"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 404 {object} map[string]string "Событие не найдено"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /events/{id}/export [get]
 func (h *EventHandler) ExportParticipants(c *gin.Context) {
 	eventID := c.Param("id")
 

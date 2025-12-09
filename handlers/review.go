@@ -24,6 +24,22 @@ type CreateReviewRequest struct {
 	Comment string `json:"comment"`
 }
 
+// CreateReview godoc
+// @Summary Создать отзыв о событии
+// @Description Создание отзыва о прошедшем событии (только для участников)
+// @Tags Отзывы
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "UUID события"
+// @Param request body object{rating=int,comment=string} true "Данные отзыва (рейтинг 1-5, комментарий до 2000 символов)"
+// @Success 200 {object} map[string]interface{} "Отзыв создан"
+// @Failure 400 {object} map[string]string "Ошибка валидации, событие не прошедшее, отзыв уже оставлен"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 403 {object} map[string]string "Вы не участвовали в этом событии"
+// @Failure 404 {object} map[string]string "Событие не найдено"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /events/{id}/reviews [post]
 func (h *ReviewHandler) CreateReview(c *gin.Context) {
 	eventID := c.Param("id")
 
@@ -99,6 +115,21 @@ func (h *ReviewHandler) CreateReview(c *gin.Context) {
 	})
 }
 
+// GetEventReviews godoc
+// @Summary Получить отзывы о событии
+// @Description Получение списка отзывов о событии с пагинацией
+// @Tags Отзывы
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "UUID события"
+// @Param page query int false "Номер страницы (по умолчанию: 1)"
+// @Param limit query int false "Количество элементов на странице (по умолчанию: 20, максимум: 100)"
+// @Success 200 {object} dto.ReviewsResponse "Список отзывов с пагинацией"
+// @Failure 400 {object} map[string]string "Неверный формат ID"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /events/{id}/reviews [get]
 func (h *ReviewHandler) GetEventReviews(c *gin.Context) {
 	eventID := c.Param("id")
 
@@ -177,6 +208,22 @@ func (h *ReviewHandler) GetEventReviews(c *gin.Context) {
 	})
 }
 
+// UpdateReview godoc
+// @Summary Обновить отзыв
+// @Description Обновление своего отзыва о событии
+// @Tags Отзывы
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "UUID события"
+// @Param reviewId path string true "UUID отзыва"
+// @Param request body object{rating=int,comment=string} true "Данные для обновления"
+// @Success 200 {object} map[string]string "Отзыв обновлен"
+// @Failure 400 {object} map[string]string "Ошибка валидации"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 404 {object} map[string]string "Отзыв не найден или нет прав на изменение"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /events/{id}/reviews/{reviewId} [put]
 func (h *ReviewHandler) UpdateReview(c *gin.Context) {
 	reviewID := c.Param("reviewId")
 
@@ -220,6 +267,21 @@ func (h *ReviewHandler) UpdateReview(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Отзыв обновлен"})
 }
 
+// DeleteReview godoc
+// @Summary Удалить отзыв
+// @Description Удаление своего отзыва о событии
+// @Tags Отзывы
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "UUID события"
+// @Param reviewId path string true "UUID отзыва"
+// @Success 200 {object} map[string]string "Отзыв удален"
+// @Failure 400 {object} map[string]string "Неверный формат ID"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 404 {object} map[string]string "Отзыв не найден или нет прав на удаление"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /events/{id}/reviews/{reviewId} [delete]
 func (h *ReviewHandler) DeleteReview(c *gin.Context) {
 	reviewID := c.Param("reviewId")
 

@@ -23,6 +23,19 @@ func NewCategoryHandler() *CategoryHandler {
 	}
 }
 
+// GetCategories godoc
+// @Summary Получить список категорий
+// @Description Получение списка категорий событий с пагинацией и поиском
+// @Tags Категории
+// @Accept json
+// @Produce json
+// @Param page query int false "Номер страницы (по умолчанию: 1)"
+// @Param limit query int false "Количество элементов на странице (по умолчанию: 20, максимум: 100)"
+// @Param search query string false "Поиск по названию и описанию (1-100 символов)"
+// @Success 200 {object} dto.PaginationResponse{data=[]dto.CategoryInfo} "Список категорий с пагинацией"
+// @Failure 400 {object} map[string]string "Ошибка валидации параметров"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /categories [get]
 func (h *CategoryHandler) GetCategories(c *gin.Context) {
 	search := c.Query("search")
 	
@@ -81,6 +94,21 @@ func (h *CategoryHandler) GetCategories(c *gin.Context) {
 	})
 }
 
+// CreateCategory godoc
+// @Summary Создать категорию
+// @Description Создание новой категории событий (только для администраторов)
+// @Tags Категории
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object{name=string,description=string} true "Данные категории"
+// @Success 201 {object} dto.CategoryInfo "Категория создана"
+// @Failure 400 {object} map[string]string "Ошибка валидации"
+// @Failure 401 {object} map[string]string "Требуется авторизация"
+// @Failure 403 {object} map[string]string "Требуется роль администратора"
+// @Failure 409 {object} map[string]string "Категория с таким названием уже существует"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /admin/categories [post]
 func (h *CategoryHandler) CreateCategory(c *gin.Context) {
 	var req struct {
 		Name        string `json:"name" binding:"required"`

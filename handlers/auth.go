@@ -26,6 +26,18 @@ func NewAuthHandler() *AuthHandler {
 	}
 }
 
+// Register godoc
+// @Summary Регистрация нового пользователя
+// @Description Регистрация пользователя с отправкой кода подтверждения на email
+// @Tags Авторизация
+// @Accept json
+// @Produce json
+// @Param request body dto.RegisterRequest true "Данные для регистрации"
+// @Success 200 {object} map[string]interface{} "Код подтверждения отправлен"
+// @Failure 400 {object} map[string]string "Ошибка валидации"
+// @Failure 409 {object} map[string]string "Пользователь уже существует"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req dto.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -59,9 +71,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	var existingUser models.User
-	if err := database.DB.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
+	if err := database.DB.Where("email = ? AND status != ?", req.Email, models.UserStatusDeleted).First(&existingUser).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "Пользователь с такой почтой уже существует"})
 		return
+	}
+	
+	if err := database.DB.Unscoped().Where("email = ? AND status = ?", req.Email, models.UserStatusDeleted).First(&existingUser).Error; err == nil {
+		database.DB.Unscoped().Delete(&existingUser)
 	}
 
 	var existingPending models.RegistrationPending
@@ -101,17 +117,29 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		h.logger.Error("Ошибка отправки кода подтверждения", zap.String("email", req.Email), zap.Error(err))
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Код подтверждения не удалось отправить. Используйте /api/auth/resend-code для повторной отправки",
-			"email": req.Email,
+			"email":   req.Email,
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Код подтверждения отправлен на вашу электронную почту. Пожалуйста, проверьте почту для завершения регистрации.",
-		"email": req.Email,
+		"email":   req.Email,
 	})
 }
 
+// VerifyEmail godoc
+// @Summary Подтверждение email
+// @Description Подтверждение email с помощью кода из письма и создание учетной записи
+// @Tags Авторизация
+// @Accept json
+// @Produce json
+// @Param request body dto.VerifyEmailRequest true "Email и код подтверждения"
+// @Success 200 {object} dto.AuthResponse "Учетная запись создана, токен выдан"
+// @Failure 400 {object} map[string]interface{} "Неверный или истекший код"
+// @Failure 409 {object} map[string]string "Пользователь уже существует"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /auth/verify-email [post]
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	var req dto.VerifyEmailRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -137,10 +165,15 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	}
 
 	var existingUser models.User
-	if err := database.DB.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
+	if err := database.DB.Where("email = ? AND status != ?", req.Email, models.UserStatusDeleted).First(&existingUser).Error; err == nil {
 		database.DB.Delete(&registrationPending)
 		c.JSON(http.StatusConflict, gin.H{"error": "Пользователь с такой почтой уже существует"})
 		return
+	}
+	
+	var deletedUser models.User
+	if err := database.DB.Unscoped().Where("email = ? AND status = ?", req.Email, models.UserStatusDeleted).First(&deletedUser).Error; err == nil {
+		database.DB.Unscoped().Delete(&deletedUser)
 	}
 
 	user := models.User{
@@ -197,6 +230,18 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	})
 }
 
+// ResendCode godoc
+// @Summary Повторная отправка кода подтверждения
+// @Description Отправка нового кода подтверждения на email
+// @Tags Авторизация
+// @Accept json
+// @Produce json
+// @Param request body object{email=string} true "Email для повторной отправки кода"
+// @Success 200 {object} map[string]string "Новый код отправлен"
+// @Failure 400 {object} map[string]string "Ошибка валидации или почта уже подтверждена"
+// @Failure 404 {object} map[string]string "Запрос на регистрацию не найден"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /auth/resend-code [post]
 func (h *AuthHandler) ResendCode(c *gin.Context) {
 	var req struct {
 		Email string `json:"email" binding:"required,email"`
@@ -245,6 +290,18 @@ func (h *AuthHandler) ResendCode(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Новый код подтверждения отправлен на вашу почту"})
 }
 
+// Login godoc
+// @Summary Вход в систему
+// @Description Авторизация пользователя по email и паролю
+// @Tags Авторизация
+// @Accept json
+// @Produce json
+// @Param request body dto.LoginRequest true "Email и пароль"
+// @Success 200 {object} dto.AuthResponse "Успешный вход, токен выдан"
+// @Failure 400 {object} map[string]string "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Неверные данные или почта не подтверждена"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req dto.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -296,10 +353,29 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
+// Logout godoc
+// @Summary Выход из системы
+// @Description Выход из системы (на клиенте необходимо удалить токен)
+// @Tags Авторизация
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]string "Выход выполнен"
+// @Router /auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Выход выполнен успешно"})
 }
 
+// ForgotPassword godoc
+// @Summary Запрос восстановления пароля
+// @Description Отправка письма со ссылкой для сброса пароля
+// @Tags Авторизация
+// @Accept json
+// @Produce json
+// @Param request body dto.ForgotPasswordRequest true "Email для восстановления"
+// @Success 200 {object} map[string]string "Письмо отправлено (или пользователь не найден)"
+// @Failure 400 {object} map[string]string "Ошибка валидации"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /auth/forgot-password [post]
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	var req dto.ForgotPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -348,6 +424,18 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Если пользователь с такой почтой существует, письмо со ссылкой для сброса пароля отправлено на указанную почту"})
 }
 
+// ResetPassword godoc
+// @Summary Сброс пароля
+// @Description Сброс пароля по токену из письма
+// @Tags Авторизация
+// @Accept json
+// @Produce json
+// @Param request body dto.ResetPasswordRequest true "Токен и новый пароль"
+// @Success 200 {object} map[string]string "Пароль успешно изменен"
+// @Failure 400 {object} map[string]interface{} "Неверный или истекший токен, ошибка валидации"
+// @Failure 404 {object} map[string]string "Пользователь не найден"
+// @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
+// @Router /auth/reset-password [post]
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	var req dto.ResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
