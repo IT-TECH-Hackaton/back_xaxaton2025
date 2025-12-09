@@ -36,6 +36,13 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 		userID = nil
 	}
 	tab := c.Query("tab")
+	search := c.Query("search")
+	categoryIDs := c.QueryArray("categoryIDs")
+	tags := c.QueryArray("tags")
+	dateFrom := c.Query("dateFrom")
+	dateTo := c.Query("dateTo")
+	sortBy := c.DefaultQuery("sortBy", "startDate")
+	sortOrder := c.DefaultQuery("sortOrder", "ASC")
 
 	page := c.DefaultQuery("page", "1")
 	limit := c.DefaultQuery("limit", "20")
@@ -51,8 +58,7 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 
 	offset := (pageInt - 1) * limitInt
 
-	var events []models.Event
-	query := database.DB.Preload("Organizer").Preload("Participants").Preload("Categories")
+	query := database.DB.Model(&models.Event{}).Preload("Organizer").Preload("Participants").Preload("Categories")
 
 	switch tab {
 	case "active":
@@ -79,10 +85,82 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 
 	query = query.Where("status != ?", models.EventStatusRejected)
 
-	var total int64
-	query.Model(&models.Event{}).Count(&total)
+	if search != "" {
+		if !utils.ValidateStringLength(search, 1, 200) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Поисковый запрос должен быть от 1 до 200 символов"})
+			return
+		}
+		query = query.Where("title ILIKE ? OR short_description ILIKE ? OR full_description ILIKE ?",
+			"%"+search+"%", "%"+search+"%", "%"+search+"%")
+	}
 
-	if err := query.Offset(offset).Limit(limitInt).Order("start_date ASC").Find(&events).Error; err != nil {
+	if len(categoryIDs) > 0 {
+		var validCategoryIDs []uuid.UUID
+		for _, catIDStr := range categoryIDs {
+			if !utils.ValidateUUID(catIDStr) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID категории: " + catIDStr})
+				return
+			}
+			validCategoryIDs = append(validCategoryIDs, uuid.MustParse(catIDStr))
+		}
+		if len(validCategoryIDs) > 0 {
+			query = query.Where("id IN (SELECT event_id FROM event_categories WHERE category_id IN ?)", validCategoryIDs)
+		}
+	}
+
+	if len(tags) > 0 {
+		for _, tag := range tags {
+			if tag != "" {
+				query = query.Where("? = ANY(tags)", tag)
+			}
+		}
+	}
+
+	if dateFrom != "" {
+		if dateFromTime, err := time.Parse("2006-01-02", dateFrom); err == nil {
+			query = query.Where("start_date >= ?", dateFromTime)
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат dateFrom. Используйте YYYY-MM-DD"})
+			return
+		}
+	}
+
+	if dateTo != "" {
+		if dateToTime, err := time.Parse("2006-01-02", dateTo); err == nil {
+			dateToTime = dateToTime.Add(24 * time.Hour).Add(-1 * time.Second)
+			query = query.Where("end_date <= ?", dateToTime)
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат dateTo. Используйте YYYY-MM-DD"})
+			return
+		}
+	}
+
+	var total int64
+	query.Count(&total)
+
+	orderBy := "start_date ASC"
+	if sortBy == "createdAt" {
+		if sortOrder == "DESC" {
+			orderBy = "created_at DESC"
+		} else {
+			orderBy = "created_at ASC"
+		}
+	} else if sortBy == "participantsCount" {
+		if sortOrder == "DESC" {
+			orderBy = "(SELECT COUNT(*) FROM event_participants WHERE event_id = events.id) DESC"
+		} else {
+			orderBy = "(SELECT COUNT(*) FROM event_participants WHERE event_id = events.id) ASC"
+		}
+	} else {
+		if sortOrder == "DESC" {
+			orderBy = "start_date DESC"
+		} else {
+			orderBy = "start_date ASC"
+		}
+	}
+
+	var events []models.Event
+	if err := query.Offset(offset).Limit(limitInt).Order(orderBy).Find(&events).Error; err != nil {
 		h.logger.Error("Ошибка при получении событий", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении событий"})
 		return

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"bekend/database"
@@ -97,10 +98,27 @@ func (h *CommunityHandler) GetCommunities(c *gin.Context) {
 	category := c.Query("category")
 	interestID := c.Query("interestID")
 
-	var communities []models.MicroCommunity
-	query := database.DB.Preload("Admin").Preload("Interests")
+	page := c.DefaultQuery("page", "1")
+	limit := c.DefaultQuery("limit", "20")
+	pageInt := 1
+	limitInt := 20
+
+	if p, err := strconv.Atoi(page); err == nil && p > 0 {
+		pageInt = p
+	}
+	if l, err := strconv.Atoi(limit); err == nil && l > 0 && l <= 100 {
+		limitInt = l
+	}
+
+	offset := (pageInt - 1) * limitInt
+
+	query := database.DB.Model(&models.MicroCommunity{}).Preload("Admin").Preload("Interests")
 
 	if search != "" {
+		if !utils.ValidateStringLength(search, 1, 100) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Поисковый запрос должен быть от 1 до 100 символов"})
+			return
+		}
 		query = query.Where("name ILIKE ? OR description ILIKE ?",
 			"%"+search+"%", "%"+search+"%")
 	}
@@ -120,7 +138,11 @@ func (h *CommunityHandler) GetCommunities(c *gin.Context) {
 			Where("community_interests.interest_id = ?", interestID)
 	}
 
-	if err := query.Order("members_count DESC, created_at DESC").Find(&communities).Error; err != nil {
+	var total int64
+	query.Count(&total)
+
+	var communities []models.MicroCommunity
+	if err := query.Offset(offset).Limit(limitInt).Order("members_count DESC, created_at DESC").Find(&communities).Error; err != nil {
 		h.logger.Error("Ошибка получения сообществ", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении сообществ"})
 		return
@@ -131,7 +153,16 @@ func (h *CommunityHandler) GetCommunities(c *gin.Context) {
 		result[i] = h.communityToResponse(comm)
 	}
 
-	c.JSON(http.StatusOK, result)
+	totalPages := int((total + int64(limitInt) - 1) / int64(limitInt))
+	c.JSON(http.StatusOK, dto.PaginationResponse{
+		Data: result,
+		Pagination: dto.Pagination{
+			Page:       pageInt,
+			Limit:      limitInt,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	})
 }
 
 func (h *CommunityHandler) GetCommunity(c *gin.Context) {

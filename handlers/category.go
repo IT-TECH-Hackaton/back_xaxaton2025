@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"bekend/database"
 	"bekend/dto"
@@ -23,8 +24,37 @@ func NewCategoryHandler() *CategoryHandler {
 }
 
 func (h *CategoryHandler) GetCategories(c *gin.Context) {
+	search := c.Query("search")
+	
+	page := c.DefaultQuery("page", "1")
+	limit := c.DefaultQuery("limit", "20")
+	pageInt := 1
+	limitInt := 20
+
+	if p, err := strconv.Atoi(page); err == nil && p > 0 {
+		pageInt = p
+	}
+	if l, err := strconv.Atoi(limit); err == nil && l > 0 && l <= 100 {
+		limitInt = l
+	}
+
+	offset := (pageInt - 1) * limitInt
+
+	query := database.DB.Model(&models.Category{})
+
+	if search != "" {
+		if !utils.ValidateStringLength(search, 1, 100) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Поисковый запрос должен быть от 1 до 100 символов"})
+			return
+		}
+		query = query.Where("name ILIKE ? OR description ILIKE ?", "%"+search+"%", "%"+search+"%")
+	}
+
+	var total int64
+	query.Count(&total)
+
 	var categories []models.Category
-	if err := database.DB.Order("name ASC").Find(&categories).Error; err != nil {
+	if err := query.Offset(offset).Limit(limitInt).Order("name ASC").Find(&categories).Error; err != nil {
 		h.logger.Error("Ошибка получения категорий", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении категорий"})
 		return
@@ -33,12 +63,22 @@ func (h *CategoryHandler) GetCategories(c *gin.Context) {
 	result := make([]dto.CategoryInfo, len(categories))
 	for i, cat := range categories {
 		result[i] = dto.CategoryInfo{
-			ID:   cat.ID.String(),
-			Name: cat.Name,
+			ID:          cat.ID.String(),
+			Name:        cat.Name,
+			Description: cat.Description,
 		}
 	}
 
-	c.JSON(http.StatusOK, result)
+	totalPages := int((total + int64(limitInt) - 1) / int64(limitInt))
+	c.JSON(http.StatusOK, dto.PaginationResponse{
+		Data: result,
+		Pagination: dto.Pagination{
+			Page:       pageInt,
+			Limit:      limitInt,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	})
 }
 
 func (h *CategoryHandler) CreateCategory(c *gin.Context) {

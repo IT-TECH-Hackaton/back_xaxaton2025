@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"bekend/database"
@@ -28,18 +29,43 @@ func (h *InterestHandler) GetInterests(c *gin.Context) {
 	category := c.Query("category")
 	search := c.Query("search")
 
-	var interests []models.Interest
-	query := database.DB
+	page := c.DefaultQuery("page", "1")
+	limit := c.DefaultQuery("limit", "20")
+	pageInt := 1
+	limitInt := 20
+
+	if p, err := strconv.Atoi(page); err == nil && p > 0 {
+		pageInt = p
+	}
+	if l, err := strconv.Atoi(limit); err == nil && l > 0 && l <= 100 {
+		limitInt = l
+	}
+
+	offset := (pageInt - 1) * limitInt
+
+	query := database.DB.Model(&models.Interest{})
 
 	if category != "" {
+		if !utils.ValidateStringLength(category, 1, 50) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Категория должна быть от 1 до 50 символов"})
+			return
+		}
 		query = query.Where("category = ?", category)
 	}
 
 	if search != "" {
+		if !utils.ValidateStringLength(search, 1, 100) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Поисковый запрос должен быть от 1 до 100 символов"})
+			return
+		}
 		query = query.Where("name ILIKE ? OR description ILIKE ?", "%"+search+"%", "%"+search+"%")
 	}
 
-	if err := query.Order("name ASC").Find(&interests).Error; err != nil {
+	var total int64
+	query.Count(&total)
+
+	var interests []models.Interest
+	if err := query.Offset(offset).Limit(limitInt).Order("name ASC").Find(&interests).Error; err != nil {
 		h.logger.Error("Ошибка получения интересов", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении интересов"})
 		return
@@ -55,7 +81,16 @@ func (h *InterestHandler) GetInterests(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, result)
+	totalPages := int((total + int64(limitInt) - 1) / int64(limitInt))
+	c.JSON(http.StatusOK, dto.PaginationResponse{
+		Data: result,
+		Pagination: dto.Pagination{
+			Page:       pageInt,
+			Limit:      limitInt,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	})
 }
 
 func (h *InterestHandler) GetUserInterests(c *gin.Context) {

@@ -43,8 +43,9 @@ type UpdateEventRequest struct {
 }
 
 type CategoryInfo struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
 type PaginationResponse struct {
