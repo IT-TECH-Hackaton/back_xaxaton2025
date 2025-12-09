@@ -16,6 +16,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&MatchRequest{},
 		&MicroCommunity{},
 		&CommunityMember{},
+		&CommunityInterest{},
 	)
 }
 

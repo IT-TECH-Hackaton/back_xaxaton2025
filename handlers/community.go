@@ -42,19 +42,36 @@ func (h *CommunityHandler) CreateCommunity(c *gin.Context) {
 		return
 	}
 
-	tagsStr := strings.Join(req.InterestTags, ",")
-	if len(tagsStr) > 500 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Слишком много тегов"})
-		return
+	var interests []models.Interest
+	if len(req.InterestIDs) > 0 {
+		var interestUUIDs []uuid.UUID
+		for _, idStr := range req.InterestIDs {
+			if !utils.ValidateUUID(idStr) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID интереса: " + idStr})
+				return
+			}
+			interestUUIDs = append(interestUUIDs, uuid.MustParse(idStr))
+		}
+
+		if err := database.DB.Where("id IN ?", interestUUIDs).Find(&interests).Error; err != nil {
+			h.logger.Error("Ошибка получения интересов", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении интересов"})
+			return
+		}
+
+		if len(interests) != len(req.InterestIDs) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Некоторые интересы не найдены"})
+			return
+		}
 	}
 
 	community := models.MicroCommunity{
 		Name:         strings.TrimSpace(req.Name),
 		Description:  req.Description,
-		InterestTags: tagsStr,
 		AdminID:      userID.(uuid.UUID),
 		AutoNotify:   req.AutoNotify,
 		MembersCount: 1,
+		Interests:    interests,
 	}
 
 	if err := database.DB.Create(&community).Error; err != nil {
@@ -78,17 +95,29 @@ func (h *CommunityHandler) CreateCommunity(c *gin.Context) {
 func (h *CommunityHandler) GetCommunities(c *gin.Context) {
 	search := c.Query("search")
 	category := c.Query("category")
+	interestID := c.Query("interestID")
 
 	var communities []models.MicroCommunity
-	query := database.DB.Preload("Admin")
+	query := database.DB.Preload("Admin").Preload("Interests")
 
 	if search != "" {
-		query = query.Where("name ILIKE ? OR description ILIKE ? OR interest_tags ILIKE ?",
-			"%"+search+"%", "%"+search+"%", "%"+search+"%")
+		query = query.Where("name ILIKE ? OR description ILIKE ?",
+			"%"+search+"%", "%"+search+"%")
 	}
 
 	if category != "" {
-		query = query.Where("interest_tags ILIKE ?", "%"+category+"%")
+		query = query.Joins("JOIN community_interests ON micro_communities.id = community_interests.community_id").
+			Joins("JOIN interests ON community_interests.interest_id = interests.id").
+			Where("interests.category = ?", category)
+	}
+
+	if interestID != "" {
+		if !utils.ValidateUUID(interestID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID интереса"})
+			return
+		}
+		query = query.Joins("JOIN community_interests ON micro_communities.id = community_interests.community_id").
+			Where("community_interests.interest_id = ?", interestID)
 	}
 
 	if err := query.Order("members_count DESC, created_at DESC").Find(&communities).Error; err != nil {
@@ -113,7 +142,8 @@ func (h *CommunityHandler) GetCommunity(c *gin.Context) {
 	}
 
 	var community models.MicroCommunity
-	if err := database.DB.Preload("Admin").Where("id = ?", communityID).First(&community).Error; err != nil {
+	if err := database.DB.Preload("Admin").Preload("Interests").
+		Where("id = ?", communityID).First(&community).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Сообщество не найдено"})
 		return
 	}
@@ -210,7 +240,7 @@ func (h *CommunityHandler) GetMyCommunities(c *gin.Context) {
 	}
 
 	var memberships []models.CommunityMember
-	if err := database.DB.Preload("Community").Preload("Community.Admin").
+	if err := database.DB.Preload("Community").Preload("Community.Admin").Preload("Community.Interests").
 		Where("user_id = ?", userID).Find(&memberships).Error; err != nil {
 		h.logger.Error("Ошибка получения сообществ пользователя", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении сообществ"})
@@ -256,11 +286,13 @@ func (h *CommunityHandler) GetCommunityMembers(c *gin.Context) {
 }
 
 func (h *CommunityHandler) communityToResponse(community models.MicroCommunity) dto.CommunityResponse {
-	tags := []string{}
-	if community.InterestTags != "" {
-		tags = strings.Split(community.InterestTags, ",")
-		for i, tag := range tags {
-			tags[i] = strings.TrimSpace(tag)
+	interests := make([]dto.InterestInfo, len(community.Interests))
+	for i, interest := range community.Interests {
+		interests[i] = dto.InterestInfo{
+			ID:          interest.ID.String(),
+			Name:        interest.Name,
+			Category:    interest.Category,
+			Description: interest.Description,
 		}
 	}
 
@@ -268,7 +300,7 @@ func (h *CommunityHandler) communityToResponse(community models.MicroCommunity) 
 		ID:           community.ID.String(),
 		Name:         community.Name,
 		Description:  community.Description,
-		InterestTags: tags,
+		Interests:    interests,
 		Admin: dto.UserInfo{
 			ID:    community.Admin.ID.String(),
 			Email: community.Admin.Email,
@@ -278,4 +310,3 @@ func (h *CommunityHandler) communityToResponse(community models.MicroCommunity) 
 		CreatedAt:    community.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 }
-

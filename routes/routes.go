@@ -34,19 +34,20 @@ func SetupRoutes() *gin.Engine {
 		auth := api.Group("/auth")
 		{
 			auth.POST("/register", middleware.RateLimitMiddleware("3-H"), authHandler.Register)
-			auth.POST("/verify-email", authHandler.VerifyEmail)
+			auth.POST("/verify-email", middleware.RateLimitMiddleware("10-M"), authHandler.VerifyEmail)
 			auth.POST("/resend-code", middleware.RateLimitMiddleware("3-H"), authHandler.ResendCode)
 			auth.POST("/login", middleware.RateLimitMiddleware("5-M"), authHandler.Login)
 			auth.POST("/logout", authHandler.Logout)
 			auth.POST("/forgot-password", middleware.RateLimitMiddleware("3-H"), authHandler.ForgotPassword)
-			auth.POST("/reset-password", authHandler.ResetPassword)
-			auth.GET("/yandex", authHandler.YandexAuth)
+			auth.POST("/reset-password", middleware.RateLimitMiddleware("5-M"), authHandler.ResetPassword)
+			auth.GET("/yandex", middleware.RateLimitMiddleware("10-M"), authHandler.YandexAuth)
 			auth.GET("/yandex/callback", authHandler.YandexCallback)
-			auth.POST("/yandex/fake", authHandler.FakeYandexAuth)
+			auth.POST("/yandex/fake", middleware.RateLimitMiddleware("10-M"), authHandler.FakeYandexAuth)
 		}
 
 		upload := api.Group("/upload")
 		upload.Use(middleware.AuthMiddleware())
+		upload.Use(middleware.RateLimitMiddleware("20-H"))
 		{
 			upload.POST("/image", uploadHandler.UploadImage)
 		}
@@ -82,6 +83,7 @@ func SetupRoutes() *gin.Engine {
 
 		geocoderHandler := handlers.NewGeocoderHandler()
 		geocoder := api.Group("/geocoder")
+		geocoder.Use(middleware.RateLimitMiddleware("100-H"))
 		{
 			geocoder.POST("/geocode", geocoderHandler.GeocodeAddress)
 			geocoder.POST("/reverse", geocoderHandler.ReverseGeocode)
