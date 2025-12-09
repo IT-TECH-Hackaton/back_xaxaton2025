@@ -93,22 +93,17 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 		query = query.Where("status = ?", models.EventStatusActive)
 	case "my":
 		if userID != nil {
-			query = query.Joins("JOIN event_participants ON events.id = event_participants.event_id").
-				Where("event_participants.user_id = ?", userID).
+			userUUID := userID.(uuid.UUID)
+			query = query.Where("(organizer_id = ? OR id IN (SELECT event_id FROM event_participants WHERE user_id = ?))", userUUID, userUUID).
 				Where("status IN ?", []models.EventStatus{models.EventStatusActive, models.EventStatusPast})
 		} else {
-			query = query.Where("1 = 0")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Для просмотра своих событий требуется авторизация"})
+			return
 		}
 	case "past":
 		query = query.Where("status = ?", models.EventStatusPast)
 	default:
-		if userID != nil {
-			query = query.Joins("JOIN event_participants ON events.id = event_participants.event_id").
-				Where("event_participants.user_id = ?", userID).
-				Where("status IN ?", []models.EventStatus{models.EventStatusActive, models.EventStatusPast})
-		} else {
-			query = query.Where("1 = 0")
-		}
+		query = query.Where("status != ?", models.EventStatusRejected)
 	}
 
 	if statusFilter != "" {
@@ -118,7 +113,7 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный статус. Допустимые значения: Активное, Прошедшее, Отклоненное"})
 			return
 		}
-	} else {
+	} else if tab != "active" && tab != "past" && tab != "my" {
 		query = query.Where("status != ?", models.EventStatusRejected)
 	}
 
@@ -173,7 +168,20 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 	}
 
 	var total int64
-	query.Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		h.logger.Error("Ошибка при подсчете событий", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при подсчете событий"})
+		return
+	}
+
+	h.logger.Info("Запрос событий",
+		zap.String("tab", tab),
+		zap.String("statusFilter", statusFilter),
+		zap.Int64("total", total),
+		zap.Int("page", pageInt),
+		zap.Int("limit", limitInt),
+		zap.Int("offset", offset),
+	)
 
 	orderBy := "start_date ASC"
 	if sortBy == "createdAt" {
@@ -203,44 +211,99 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 		return
 	}
 
-	result := make([]dto.EventResponse, len(events))
-	for i, event := range events {
-		categories := make([]dto.CategoryInfo, len(event.Categories))
-		for j, cat := range event.Categories {
-			categories[j] = dto.CategoryInfo{
-				ID:   cat.ID.String(),
-				Name: cat.Name,
-			}
-		}
+	h.logger.Info("Найдено событий",
+		zap.Int("count", len(events)),
+		zap.String("tab", tab),
+		zap.Int64("total", total),
+	)
 
-		result[i] = dto.EventResponse{
-			ID:                event.ID.String(),
-			Title:             event.Title,
-			ShortDescription:  event.ShortDescription,
-			FullDescription:   event.FullDescription,
-			StartDate:         event.StartDate,
-			EndDate:           event.EndDate,
-			ImageURL:          event.ImageURL,
-			PaymentInfo:       event.PaymentInfo,
-			MaxParticipants:   event.MaxParticipants,
-			Status:            string(event.Status),
-			ParticipantsCount: event.GetParticipantsCount(),
-			Categories:        categories,
-			Tags:              event.Tags,
-			Address:           event.Address,
-			Latitude:          event.Latitude,
-			Longitude:         event.Longitude,
-			YandexMapLink:     event.YandexMapLink,
-			Organizer: dto.UserInfo{
-				ID:       event.Organizer.ID.String(),
-				FullName: event.Organizer.FullName,
-				Email:    event.Organizer.Email,
-			},
-		}
+	if len(events) == 0 {
+		h.logger.Warn("События не найдены",
+			zap.String("tab", tab),
+			zap.String("statusFilter", statusFilter),
+			zap.Int64("total", total),
+		)
 	}
 
+	result := make([]dto.EventResponse, 0, len(events))
+	for idx, event := range events {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					h.logger.Error("Паника при обработке события",
+						zap.Int("index", idx),
+						zap.String("eventID", event.ID.String()),
+						zap.Any("panic", r),
+					)
+				}
+			}()
+
+			h.logger.Debug("Обработка события",
+				zap.Int("index", idx),
+				zap.String("eventID", event.ID.String()),
+				zap.String("title", event.Title),
+				zap.String("status", string(event.Status)),
+				zap.Int("categoriesCount", len(event.Categories)),
+				zap.Int("participantsCount", len(event.Participants)),
+			)
+			
+			categories := make([]dto.CategoryInfo, len(event.Categories))
+			for j, cat := range event.Categories {
+				categories[j] = dto.CategoryInfo{
+					ID:   cat.ID.String(),
+					Name: cat.Name,
+				}
+			}
+
+			organizerInfo := dto.UserInfo{}
+			if event.Organizer.ID != uuid.Nil {
+				organizerInfo = dto.UserInfo{
+					ID:       event.Organizer.ID.String(),
+					FullName: event.Organizer.FullName,
+					Email:    event.Organizer.Email,
+				}
+			} else {
+				h.logger.Warn("Организатор не загружен для события",
+					zap.String("eventID", event.ID.String()),
+					zap.String("organizerID", event.OrganizerID.String()),
+				)
+			}
+
+			eventResponse := dto.EventResponse{
+				ID:                event.ID.String(),
+				Title:             event.Title,
+				ShortDescription:  event.ShortDescription,
+				FullDescription:   event.FullDescription,
+				StartDate:         event.StartDate,
+				EndDate:           event.EndDate,
+				ImageURL:          event.ImageURL,
+				PaymentInfo:       event.PaymentInfo,
+				MaxParticipants:   event.MaxParticipants,
+				Status:            string(event.Status),
+				ParticipantsCount: event.GetParticipantsCount(),
+				Categories:        categories,
+				Tags:              []string(event.Tags),
+				Address:           event.Address,
+				Latitude:          event.Latitude,
+				Longitude:         event.Longitude,
+				YandexMapLink:     event.YandexMapLink,
+				Organizer:         organizerInfo,
+			}
+			
+			result = append(result, eventResponse)
+		}()
+	}
+
+	h.logger.Info("Подготовка ответа",
+		zap.Int("resultCount", len(result)),
+		zap.Int64("total", total),
+		zap.Int("page", pageInt),
+		zap.Int("limit", limitInt),
+	)
+
 	totalPages := int((total + int64(limitInt) - 1) / int64(limitInt))
-	c.JSON(http.StatusOK, dto.PaginationResponse{
+	
+	response := dto.PaginationResponse{
 		Data: result,
 		Pagination: dto.Pagination{
 			Page:       pageInt,
@@ -248,7 +311,15 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 			Total:      total,
 			TotalPages: totalPages,
 		},
-	})
+	}
+
+	h.logger.Info("Отправка ответа",
+		zap.Int("dataLength", len(result)),
+		zap.Int64("total", response.Pagination.Total),
+		zap.Int("totalPages", response.Pagination.TotalPages),
+	)
+
+	c.JSON(http.StatusOK, response)
 }
 
 // GetEvent godoc
@@ -331,7 +402,7 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 		AverageRating:     avgRating,
 		TotalReviews:      totalReviews,
 		Categories:        categories,
-		Tags:              event.Tags,
+		Tags:              []string(event.Tags),
 		Address:           event.Address,
 		Latitude:          event.Latitude,
 		Longitude:         event.Longitude,
@@ -634,7 +705,7 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 		MaxParticipants:  maxParticipants,
 		Status:           models.EventStatusActive,
 		OrganizerID:      organizerID,
-		Tags:             tags,
+		Tags:             models.StringArray(tags),
 		Address:          address,
 		Latitude:         latitude,
 		Longitude:        longitude,
@@ -836,7 +907,7 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 			return
 		}
-		event.Tags = req.Tags
+		event.Tags = models.StringArray(req.Tags)
 	}
 
 	if err := database.DB.Save(&event).Error; err != nil {

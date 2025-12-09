@@ -1,6 +1,9 @@
 package models
 
 import (
+	"database/sql/driver"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,7 +33,7 @@ type Event struct {
 	Organizer       User      `gorm:"foreignKey:OrganizerID" json:"organizer"`
 	Participants    []EventParticipant `gorm:"foreignKey:EventID" json:"participants"`
 	Categories      []Category `gorm:"many2many:event_categories;" json:"categories"` // Категории события
-	Tags            []string  `gorm:"type:text[]" json:"tags"` // Теги события (массив строк)
+	Tags            StringArray `gorm:"type:text[]" json:"tags"` // Теги события (массив строк)
 	// Место проведения
 	Address         string    `gorm:"type:text" json:"address"` // Адрес места проведения
 	Latitude        *float64  `gorm:"type:decimal(10,8)" json:"latitude"` // Широта
@@ -72,5 +75,72 @@ func (ep *EventParticipant) BeforeCreate(tx *gorm.DB) error {
 		ep.ID = uuid.New()
 	}
 	return nil
+}
+
+type StringArray []string
+
+func (a *StringArray) Scan(value interface{}) error {
+	if value == nil {
+		*a = []string{}
+		return nil
+	}
+	
+	var str string
+	switch v := value.(type) {
+	case []byte:
+		str = string(v)
+	case string:
+		str = v
+	default:
+		return errors.New("cannot scan into StringArray")
+	}
+	
+	if str == "{}" || str == "" {
+		*a = []string{}
+		return nil
+	}
+	
+	str = strings.TrimPrefix(str, "{")
+	str = strings.TrimSuffix(str, "}")
+	if str == "" {
+		*a = []string{}
+		return nil
+	}
+	
+	parts := strings.Split(str, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		part = strings.TrimPrefix(part, `"`)
+		part = strings.TrimSuffix(part, `"`)
+		part = strings.ReplaceAll(part, `\"`, `"`)
+		part = strings.ReplaceAll(part, `\\`, `\`)
+		result = append(result, part)
+	}
+	
+	*a = result
+	return nil
+}
+
+func (a StringArray) Value() (driver.Value, error) {
+	if len(a) == 0 {
+		return "{}", nil
+	}
+	result := "{"
+	for i, s := range a {
+		if i > 0 {
+			result += ","
+		}
+		escaped := escapeString(s)
+		result += escaped
+	}
+	result += "}"
+	return result, nil
+}
+
+func escapeString(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\"", "\\\"")
+	return `"` + s + `"`
 }
 
