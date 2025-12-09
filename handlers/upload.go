@@ -44,18 +44,18 @@ func (h *UploadHandler) UploadImage(c *gin.Context) {
 		return
 	}
 
-	ext := filepath.Ext(file.Filename)
-	allowedExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp"}
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	allowedExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
 	allowed := false
 	for _, e := range allowedExts {
-		if strings.EqualFold(ext, e) {
+		if ext == e {
 			allowed = true
 			break
 		}
 	}
 
 	if !allowed {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Недопустимый формат файла. Разрешены: jpg, jpeg, png, gif, webp"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Недопустимый формат файла. Разрешены: jpg, jpeg, png, gif, webp, svg"})
 		return
 	}
 
@@ -118,6 +118,15 @@ func (h *UploadHandler) UploadImage(c *gin.Context) {
 }
 
 func (h *UploadHandler) isValidImageFile(buffer []byte, mimeType string, ext string) bool {
+	extLower := strings.ToLower(ext)
+	
+	if extLower == ".svg" {
+		svgMagic := []byte("<svg")
+		svgMagicAlt := []byte("<?xml")
+		svgContent := strings.ToLower(string(buffer[:min(len(buffer), 100)]))
+		return bytes.HasPrefix(buffer, svgMagic) || bytes.HasPrefix(buffer, svgMagicAlt) || strings.Contains(svgContent, "<svg")
+	}
+
 	allowedMimeTypes := []string{
 		"image/jpeg",
 		"image/png",
@@ -137,7 +146,6 @@ func (h *UploadHandler) isValidImageFile(buffer []byte, mimeType string, ext str
 		return false
 	}
 
-	extLower := strings.ToLower(ext)
 	allowedExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp"}
 	extAllowed := false
 	for _, e := range allowedExts {
@@ -176,5 +184,12 @@ func (h *UploadHandler) isValidImageFile(buffer []byte, mimeType string, ext str
 	}
 
 	return false
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 

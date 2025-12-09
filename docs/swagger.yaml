@@ -16,53 +16,6 @@ definitions:
       name:
         type: string
     type: object
-  dto.CreateEventRequest:
-    properties:
-      address:
-        type: string
-      categoryIDs:
-        description: Категории события
-        items:
-          type: string
-        type: array
-      endDate:
-        type: string
-      fullDescription:
-        type: string
-      imageURL:
-        type: string
-      latitude:
-        type: number
-      longitude:
-        type: number
-      maxParticipants:
-        type: integer
-      participantIDs:
-        items:
-          type: string
-        type: array
-      paymentInfo:
-        type: string
-      shortDescription:
-        type: string
-      startDate:
-        type: string
-      tags:
-        description: Теги события (массив строк)
-        items:
-          type: string
-        type: array
-      title:
-        type: string
-      yandexMapLink:
-        type: string
-    required:
-    - endDate
-    - fullDescription
-    - imageURL
-    - startDate
-    - title
-    type: object
   dto.EventDetailResponse:
     properties:
       address:
@@ -314,18 +267,14 @@ definitions:
     - code
     - email
     type: object
-host: localhost:8081
+host: localhost:8080
 info:
-  contact:
-    email: support@swagger.io
-    name: API Support
-    url: http://www.swagger.io/support
+  contact: {}
   description: Бекенд для системы электронной афиши на Go с полной функциональностью
     авторизации, управления событиями и администрирования.
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  termsOfService: http://swagger.io/terms/
   title: Bekend Backend API
   version: 1.0.0
 paths:
@@ -780,16 +729,80 @@ paths:
       - События
     post:
       consumes:
-      - application/json
+      - multipart/form-data
       description: Создание нового события с возможностью указания категорий, тегов
-        и участников
+        и участников. Можно загрузить изображение файлом или указать URL
       parameters:
-      - description: Данные для создания события
-        in: body
-        name: request
+      - description: Название события
+        in: formData
+        name: title
         required: true
-        schema:
-          $ref: '#/definitions/dto.CreateEventRequest'
+        type: string
+      - description: Краткое описание
+        in: formData
+        name: shortDescription
+        type: string
+      - description: Полное описание
+        in: formData
+        name: fullDescription
+        required: true
+        type: string
+      - description: Дата начала (RFC3339)
+        in: formData
+        name: startDate
+        required: true
+        type: string
+      - description: Дата окончания (RFC3339)
+        in: formData
+        name: endDate
+        required: true
+        type: string
+      - description: Изображение события (jpeg, jpg, png, gif, webp, svg, до 10MB)
+        in: formData
+        name: image
+        type: file
+      - description: URL изображения (если не загружается файл)
+        in: formData
+        name: imageURL
+        type: string
+      - description: Информация об оплате
+        in: formData
+        name: paymentInfo
+        type: string
+      - description: Максимальное количество участников
+        in: formData
+        name: maxParticipants
+        type: integer
+      - collectionFormat: csv
+        description: ID категорий (массив UUID)
+        in: formData
+        items:
+          type: string
+        name: categoryIDs
+        type: array
+      - collectionFormat: csv
+        description: Теги (массив строк)
+        in: formData
+        items:
+          type: string
+        name: tags
+        type: array
+      - description: Адрес
+        in: formData
+        name: address
+        type: string
+      - description: Широта
+        in: formData
+        name: latitude
+        type: number
+      - description: Долгота
+        in: formData
+        name: longitude
+        type: number
+      - description: Ссылка на Яндекс.Карты
+        in: formData
+        name: yandexMapLink
+        type: string
       produces:
       - application/json
       responses:

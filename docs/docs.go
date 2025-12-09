@@ -9,12 +9,7 @@ const docTemplate = `{
     "info": {
         "description": "{{escape .Description}}",
         "title": "{{.Title}}",
-        "termsOfService": "http://swagger.io/terms/",
-        "contact": {
-            "name": "API Support",
-            "url": "http://www.swagger.io/support",
-            "email": "support@swagger.io"
-        },
+        "contact": {},
         "license": {
             "name": "Apache 2.0",
             "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
@@ -715,9 +710,9 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Создание нового события с возможностью указания категорий, тегов и участников",
+                "description": "Создание нового события с возможностью указания категорий, тегов и участников. Можно загрузить изображение файлом или указать URL",
                 "consumes": [
-                    "application/json"
+                    "multipart/form-data"
                 ],
                 "produces": [
                     "application/json"
@@ -728,13 +723,106 @@ const docTemplate = `{
                 "summary": "Создать новое событие",
                 "parameters": [
                     {
-                        "description": "Данные для создания события",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/dto.CreateEventRequest"
-                        }
+                        "type": "string",
+                        "description": "Название события",
+                        "name": "title",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Краткое описание",
+                        "name": "shortDescription",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Полное описание",
+                        "name": "fullDescription",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Дата начала (RFC3339)",
+                        "name": "startDate",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Дата окончания (RFC3339)",
+                        "name": "endDate",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "Изображение события (jpeg, jpg, png, gif, webp, svg, до 10MB)",
+                        "name": "image",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "URL изображения (если не загружается файл)",
+                        "name": "imageURL",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Информация об оплате",
+                        "name": "paymentInfo",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Максимальное количество участников",
+                        "name": "maxParticipants",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "ID категорий (массив UUID)",
+                        "name": "categoryIDs",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Теги (массив строк)",
+                        "name": "tags",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Адрес",
+                        "name": "address",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Широта",
+                        "name": "latitude",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Долгота",
+                        "name": "longitude",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ссылка на Яндекс.Карты",
+                        "name": "yandexMapLink",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -1759,74 +1847,6 @@ const docTemplate = `{
                 }
             }
         },
-        "dto.CreateEventRequest": {
-            "type": "object",
-            "required": [
-                "endDate",
-                "fullDescription",
-                "imageURL",
-                "startDate",
-                "title"
-            ],
-            "properties": {
-                "address": {
-                    "type": "string"
-                },
-                "categoryIDs": {
-                    "description": "Категории события",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "endDate": {
-                    "type": "string"
-                },
-                "fullDescription": {
-                    "type": "string"
-                },
-                "imageURL": {
-                    "type": "string"
-                },
-                "latitude": {
-                    "type": "number"
-                },
-                "longitude": {
-                    "type": "number"
-                },
-                "maxParticipants": {
-                    "type": "integer"
-                },
-                "participantIDs": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "paymentInfo": {
-                    "type": "string"
-                },
-                "shortDescription": {
-                    "type": "string"
-                },
-                "startDate": {
-                    "type": "string"
-                },
-                "tags": {
-                    "description": "Теги события (массив строк)",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "title": {
-                    "type": "string"
-                },
-                "yandexMapLink": {
-                    "type": "string"
-                }
-            }
-        },
         "dto.EventDetailResponse": {
             "type": "object",
             "properties": {
@@ -2217,7 +2237,7 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0.0",
-	Host:             "localhost:8081",
+	Host:             "localhost:8080",
 	BasePath:         "/api",
 	Schemes:          []string{"http"},
 	Title:            "Bekend Backend API",

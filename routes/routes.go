@@ -19,11 +19,15 @@ func SetupRoutes() *gin.Engine {
 	r.Static("/uploads", "./uploads")
 
 	corsConfig := cors.DefaultConfig()
-	origins := strings.Split(config.AppConfig.CORSAllowOrigins, ",")
-	for i := range origins {
-		origins[i] = strings.TrimSpace(origins[i])
+	if config.AppConfig != nil && config.AppConfig.CORSAllowOrigins != "" {
+		origins := strings.Split(config.AppConfig.CORSAllowOrigins, ",")
+		for i := range origins {
+			origins[i] = strings.TrimSpace(origins[i])
+		}
+		corsConfig.AllowOrigins = origins
+	} else {
+		corsConfig.AllowOrigins = []string{"*"}
 	}
-	corsConfig.AllowOrigins = origins
 	corsConfig.AllowCredentials = true
 	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}

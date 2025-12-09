@@ -1,9 +1,14 @@
 package handlers
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"bekend/database"
@@ -329,78 +334,226 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 
 // CreateEvent godoc
 // @Summary Создать новое событие
-// @Description Создание нового события с возможностью указания категорий, тегов и участников
+// @Description Создание нового события с возможностью указания категорий, тегов и участников. Можно загрузить изображение файлом или указать URL
 // @Tags События
-// @Accept json
+// @Accept multipart/form-data
 // @Produce json
 // @Security BearerAuth
-// @Param request body dto.CreateEventRequest true "Данные для создания события"
+// @Param title formData string true "Название события"
+// @Param shortDescription formData string false "Краткое описание"
+// @Param fullDescription formData string true "Полное описание"
+// @Param startDate formData string true "Дата начала (RFC3339)"
+// @Param endDate formData string true "Дата окончания (RFC3339)"
+// @Param image formData file false "Изображение события (jpeg, jpg, png, gif, webp, svg, до 10MB)"
+// @Param imageURL formData string false "URL изображения (если не загружается файл)"
+// @Param paymentInfo formData string false "Информация об оплате"
+// @Param maxParticipants formData int false "Максимальное количество участников"
+// @Param categoryIDs formData []string false "ID категорий (массив UUID)"
+// @Param tags formData []string false "Теги (массив строк)"
+// @Param address formData string false "Адрес"
+// @Param latitude formData number false "Широта"
+// @Param longitude formData number false "Долгота"
+// @Param yandexMapLink formData string false "Ссылка на Яндекс.Карты"
 // @Success 200 {object} map[string]interface{} "Событие создано"
 // @Failure 400 {object} map[string]string "Ошибка валидации"
 // @Failure 401 {object} map[string]string "Требуется авторизация"
 // @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
 // @Router /events [post]
 func (h *EventHandler) CreateEvent(c *gin.Context) {
-	var req dto.CreateEventRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.logger.Warn("Неверные данные при создании события", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
+	title := c.PostForm("title")
+	fullDescription := c.PostForm("fullDescription")
+	shortDescription := c.PostForm("shortDescription")
+	startDateStr := c.PostForm("startDate")
+	endDateStr := c.PostForm("endDate")
+	imageURL := c.PostForm("imageURL")
+	paymentInfo := c.PostForm("paymentInfo")
+	address := c.PostForm("address")
+	yandexMapLink := c.PostForm("yandexMapLink")
+
+	if title == "" || fullDescription == "" || startDateStr == "" || endDateStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Необходимо указать: title, fullDescription, startDate, endDate"})
 		return
 	}
 
-	if !utils.ValidateStringLength(req.Title, 1, 200) {
+	startDate, err := time.Parse(time.RFC3339, startDateStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат startDate. Используйте RFC3339 (например: 2024-12-10T10:00:00Z)"})
+		return
+	}
+
+	endDate, err := time.Parse(time.RFC3339, endDateStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат endDate. Используйте RFC3339 (например: 2024-12-10T18:00:00Z)"})
+		return
+	}
+
+	var maxParticipants *int
+	if mpStr := c.PostForm("maxParticipants"); mpStr != "" {
+		if mp, err := strconv.Atoi(mpStr); err == nil && mp > 0 {
+			maxParticipants = &mp
+		}
+	}
+
+	var latitude *float64
+	if latStr := c.PostForm("latitude"); latStr != "" {
+		if lat, err := strconv.ParseFloat(latStr, 64); err == nil {
+			latitude = &lat
+		}
+	}
+
+	var longitude *float64
+	if lonStr := c.PostForm("longitude"); lonStr != "" {
+		if lon, err := strconv.ParseFloat(lonStr, 64); err == nil {
+			longitude = &lon
+		}
+	}
+
+	var categoryIDs []uuid.UUID
+	if catIDsStr := c.PostFormArray("categoryIDs"); len(catIDsStr) > 0 {
+		for _, catIDStr := range catIDsStr {
+			if catID, err := uuid.Parse(catIDStr); err == nil {
+				categoryIDs = append(categoryIDs, catID)
+			}
+		}
+	}
+
+	var tags []string
+	if tagsStr := c.PostFormArray("tags"); len(tagsStr) > 0 {
+		tags = tagsStr
+	}
+
+	fileHeader, err := c.FormFile("image")
+	if err == nil {
+		if fileHeader.Size > 10*1024*1024 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Размер файла не должен превышать 10MB"})
+			return
+		}
+
+		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+		allowedExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
+		allowed := false
+		for _, e := range allowedExts {
+			if ext == e {
+				allowed = true
+				break
+			}
+		}
+
+		if !allowed {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Недопустимый формат файла. Разрешены: jpg, jpeg, png, gif, webp, svg"})
+			return
+		}
+
+		src, err := fileHeader.Open()
+		if err != nil {
+			h.logger.Error("Ошибка открытия файла изображения", zap.Error(err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка при открытии файла"})
+			return
+		}
+		defer src.Close()
+
+		buffer := make([]byte, 512)
+		if _, err := src.Read(buffer); err != nil && err != io.EOF {
+			h.logger.Error("Ошибка чтения файла изображения", zap.Error(err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка при чтении файла"})
+			return
+		}
+
+		mimeType := http.DetectContentType(buffer)
+		if !h.isValidImageFile(buffer, mimeType, ext) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Недопустимый тип файла. Файл должен быть изображением (JPEG, PNG, GIF, WebP, SVG)"})
+			return
+		}
+
+		if _, err := src.Seek(0, io.SeekStart); err != nil {
+			h.logger.Error("Ошибка сброса указателя файла", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при чтении файла"})
+			return
+		}
+
+		uploadDir := "uploads/events"
+		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+			h.logger.Error("Ошибка создания директории для изображений событий", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании директории"})
+			return
+		}
+
+		filename := fmt.Sprintf("%s_%d%s", uuid.New().String(), time.Now().Unix(), ext)
+		filePath := filepath.Join(uploadDir, filename)
+
+		dst, err := os.Create(filePath)
+		if err != nil {
+			h.logger.Error("Ошибка создания файла изображения", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании файла"})
+			return
+		}
+		defer dst.Close()
+
+		if _, err := io.Copy(dst, src); err != nil {
+			h.logger.Error("Ошибка сохранения файла изображения", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при сохранении файла"})
+			return
+		}
+
+		imageURL = fmt.Sprintf("/uploads/events/%s", filename)
+	} else if imageURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Необходимо указать imageURL или загрузить файл image"})
+		return
+	}
+
+	if !utils.ValidateStringLength(title, 1, 200) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Название события должно быть от 1 до 200 символов"})
 		return
 	}
 
-	if !utils.ValidateStringLength(req.FullDescription, 1, 5000) {
+	if !utils.ValidateStringLength(fullDescription, 1, 5000) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Полное описание должно быть от 1 до 5000 символов"})
 		return
 	}
 
-	if req.ShortDescription != "" && !utils.ValidateStringLength(req.ShortDescription, 1, 500) {
+	if shortDescription != "" && !utils.ValidateStringLength(shortDescription, 1, 500) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Краткое описание должно быть от 1 до 500 символов"})
 		return
 	}
 
-	if req.StartDate.Before(time.Now()) {
+	if startDate.Before(time.Now()) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Дата начала должна быть в будущем"})
 		return
 	}
 
-	if req.EndDate.Before(req.StartDate) {
+	if endDate.Before(startDate) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Дата окончания должна быть позже даты начала"})
 		return
 	}
 
-	if req.MaxParticipants != nil && *req.MaxParticipants < 1 {
+	if maxParticipants != nil && *maxParticipants < 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Максимальное количество участников должно быть больше 0"})
 		return
 	}
 
-	if req.Latitude != nil {
-		if *req.Latitude < -90 || *req.Latitude > 90 {
+	if latitude != nil {
+		if *latitude < -90 || *latitude > 90 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Широта должна быть от -90 до 90"})
 			return
 		}
 	}
-	if req.Longitude != nil {
-		if *req.Longitude < -180 || *req.Longitude > 180 {
+	if longitude != nil {
+		if *longitude < -180 || *longitude > 180 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Долгота должна быть от -180 до 180"})
 			return
 		}
 	}
-	if req.Address != "" && !utils.ValidateStringLength(req.Address, 0, 500) {
+	if address != "" && !utils.ValidateStringLength(address, 0, 500) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Адрес должен быть до 500 символов"})
 		return
 	}
-	if req.YandexMapLink != "" && !utils.ValidateStringLength(req.YandexMapLink, 0, 1000) {
+	if yandexMapLink != "" && !utils.ValidateStringLength(yandexMapLink, 0, 1000) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Ссылка на карту должна быть до 1000 символов"})
 		return
 	}
 
-	if len(req.Tags) > 0 {
-		if valid, errMsg := utils.ValidateTags(req.Tags); !valid {
+	if len(tags) > 0 {
+		if valid, errMsg := utils.ValidateTags(tags); !valid {
 			c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 			return
 		}
@@ -410,21 +563,21 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 	organizerID := userID.(uuid.UUID)
 
 	event := models.Event{
-		Title:            req.Title,
-		ShortDescription: req.ShortDescription,
-		FullDescription:  req.FullDescription,
-		StartDate:        req.StartDate,
-		EndDate:          req.EndDate,
-		ImageURL:         req.ImageURL,
-		PaymentInfo:      req.PaymentInfo,
-		MaxParticipants:  req.MaxParticipants,
+		Title:            title,
+		ShortDescription: shortDescription,
+		FullDescription:  fullDescription,
+		StartDate:        startDate,
+		EndDate:          endDate,
+		ImageURL:         imageURL,
+		PaymentInfo:      paymentInfo,
+		MaxParticipants:  maxParticipants,
 		Status:           models.EventStatusActive,
 		OrganizerID:      organizerID,
-		Tags:             req.Tags,
-		Address:          req.Address,
-		Latitude:         req.Latitude,
-		Longitude:        req.Longitude,
-		YandexMapLink:    req.YandexMapLink,
+		Tags:             tags,
+		Address:          address,
+		Latitude:         latitude,
+		Longitude:        longitude,
+		YandexMapLink:    yandexMapLink,
 	}
 
 	if err := database.DB.Create(&event).Error; err != nil {
@@ -433,9 +586,9 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 		return
 	}
 
-	if len(req.CategoryIDs) > 0 {
+	if len(categoryIDs) > 0 {
 		var categories []models.Category
-		if err := database.DB.Where("id IN (?)", req.CategoryIDs).Find(&categories).Error; err == nil {
+		if err := database.DB.Where("id IN (?)", categoryIDs).Find(&categories).Error; err == nil {
 			if err := database.DB.Model(&event).Association("Categories").Append(categories); err != nil {
 				h.logger.Error("Ошибка добавления категорий к событию", zap.String("eventID", event.ID.String()), zap.Error(err))
 			}
@@ -447,22 +600,32 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 	communityService := services.NewCommunityService()
 	go communityService.NotifyCommunitiesAboutEvent(&event)
 
-	if len(req.ParticipantIDs) > 0 {
-		var users []models.User
-		if err := database.DB.Where("id IN ? AND status = ?", req.ParticipantIDs, models.UserStatusActive).Find(&users).Error; err == nil {
-			for _, user := range users {
-				participant := models.EventParticipant{
-					EventID: event.ID,
-					UserID:  user.ID,
-				}
-				if err := database.DB.Create(&participant).Error; err == nil {
-					go h.emailService.SendEventNotification(user.Email, event.Title, "Вы были добавлены в новое событие: "+event.Title+". Дата начала: "+event.StartDate.Format("02.01.2006 15:04"))
-				} else {
-					h.logger.Error("Ошибка добавления участника при создании события", zap.Any("userID", user.ID), zap.String("eventID", event.ID.String()), zap.Error(err))
-				}
+	participantIDsStr := c.PostFormArray("participantIDs")
+	if len(participantIDsStr) > 0 {
+		var participantIDs []uuid.UUID
+		for _, pidStr := range participantIDsStr {
+			if pid, err := uuid.Parse(pidStr); err == nil {
+				participantIDs = append(participantIDs, pid)
 			}
-		} else {
-			h.logger.Error("Ошибка получения пользователей для добавления в событие", zap.Error(err))
+		}
+
+		if len(participantIDs) > 0 {
+			var users []models.User
+			if err := database.DB.Where("id IN ? AND status = ?", participantIDs, models.UserStatusActive).Find(&users).Error; err == nil {
+				for _, user := range users {
+					participant := models.EventParticipant{
+						EventID: event.ID,
+						UserID:  user.ID,
+					}
+					if err := database.DB.Create(&participant).Error; err == nil {
+						go h.emailService.SendEventNotification(user.Email, event.Title, "Вы были добавлены в новое событие: "+event.Title+". Дата начала: "+event.StartDate.Format("02.01.2006 15:04"))
+					} else {
+						h.logger.Error("Ошибка добавления участника при создании события", zap.Any("userID", user.ID), zap.String("eventID", event.ID.String()), zap.Error(err))
+					}
+				}
+			} else {
+				h.logger.Error("Ошибка получения пользователей для добавления в событие", zap.Error(err))
+			}
 		}
 	}
 
@@ -873,4 +1036,71 @@ func (h *EventHandler) ExportParticipants(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при экспорте"})
 		return
 	}
+}
+
+func (h *EventHandler) isValidImageFile(buffer []byte, mimeType string, ext string) bool {
+	extLower := strings.ToLower(ext)
+
+	if extLower == ".svg" {
+		svgContent := strings.ToLower(string(buffer[:min(len(buffer), 100)]))
+		return strings.Contains(svgContent, "<svg") || strings.Contains(svgContent, "<?xml")
+	}
+
+	allowedMimeTypes := []string{
+		"image/jpeg",
+		"image/png",
+		"image/gif",
+		"image/webp",
+	}
+
+	mimeAllowed := false
+	for _, mime := range allowedMimeTypes {
+		if strings.HasPrefix(mimeType, mime) {
+			mimeAllowed = true
+			break
+		}
+	}
+
+	if !mimeAllowed {
+		return false
+	}
+
+	allowedExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp"}
+	extAllowed := false
+	for _, e := range allowedExts {
+		if extLower == e {
+			extAllowed = true
+			break
+		}
+	}
+
+	if !extAllowed {
+		return false
+	}
+
+	if len(buffer) < 4 {
+		return false
+	}
+
+	jpegMagic := []byte{0xFF, 0xD8, 0xFF}
+	pngMagic := []byte{0x89, 0x50, 0x4E, 0x47}
+	gifMagic := []byte{0x47, 0x49, 0x46, 0x38}
+	webpMagic := []byte{0x52, 0x49, 0x46, 0x46}
+
+	if bytes.HasPrefix(buffer, jpegMagic) {
+		return extLower == ".jpg" || extLower == ".jpeg"
+	}
+	if bytes.HasPrefix(buffer, pngMagic) {
+		return extLower == ".png"
+	}
+	if bytes.HasPrefix(buffer, gifMagic) {
+		return extLower == ".gif"
+	}
+	if bytes.HasPrefix(buffer, webpMagic) && len(buffer) >= 12 {
+		if bytes.Equal(buffer[8:12], []byte{0x57, 0x45, 0x42, 0x50}) {
+			return extLower == ".webp"
+		}
+	}
+
+	return false
 }

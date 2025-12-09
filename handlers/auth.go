@@ -75,7 +75,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "Пользователь с такой почтой уже существует"})
 		return
 	}
-	
+
 	if err := database.DB.Unscoped().Where("email = ? AND status = ?", req.Email, models.UserStatusDeleted).First(&existingUser).Error; err == nil {
 		database.DB.Unscoped().Delete(&existingUser)
 	}
@@ -170,7 +170,7 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "Пользователь с такой почтой уже существует"})
 		return
 	}
-	
+
 	var deletedUser models.User
 	if err := database.DB.Unscoped().Where("email = ? AND status = ?", req.Email, models.UserStatusDeleted).First(&deletedUser).Error; err == nil {
 		database.DB.Unscoped().Delete(&deletedUser)
