@@ -40,6 +40,9 @@ func SetupRoutes() *gin.Engine {
 			auth.POST("/logout", authHandler.Logout)
 			auth.POST("/forgot-password", authHandler.ForgotPassword)
 			auth.POST("/reset-password", authHandler.ResetPassword)
+			auth.GET("/yandex", authHandler.YandexAuth)
+			auth.GET("/yandex/callback", authHandler.YandexCallback)
+			auth.POST("/yandex/fake", authHandler.FakeYandexAuth)
 		}
 
 		upload := api.Group("/upload")

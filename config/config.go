@@ -25,6 +25,10 @@ type Config struct {
 	EmailPassword string
 	EmailFrom    string
 	FrontendURL  string
+	YandexClientID     string
+	YandexClientSecret string
+	YandexRedirectURI  string
+	FakeYandexAuth     bool // Фейковая авторизация через Яндекс (для разработки)
 }
 
 var AppConfig *Config
@@ -48,6 +52,10 @@ func LoadConfig() {
 		EmailPassword: getEnv("EMAIL_PASSWORD", ""),
 		EmailFrom:    getEnv("EMAIL_FROM", ""),
 		FrontendURL:  getEnv("FRONTEND_URL", "http://localhost:5173"),
+		YandexClientID:     getEnv("YANDEX_CLIENT_ID", ""),
+		YandexClientSecret: getEnv("YANDEX_CLIENT_SECRET", ""),
+		YandexRedirectURI:  getEnv("YANDEX_REDIRECT_URI", "http://localhost:8081/api/auth/yandex/callback"),
+		FakeYandexAuth:     getEnv("FAKE_YANDEX_AUTH", "false") == "true",
 	}
 
 	expirationStr := getEnv("JWT_EXPIRATION", "24h")

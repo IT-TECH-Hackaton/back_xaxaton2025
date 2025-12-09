@@ -60,6 +60,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	if !utils.ValidateStringLength(req.FullName, 2, 100) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ФИО должно быть от 2 до 100 символов"})
+		return
+	}
+
 	if !utils.ValidateEmail(req.Email) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат электронной почты"})
 		return
@@ -134,6 +139,11 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	var req VerifyEmailRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
+		return
+	}
+
+	if !utils.ValidateVerificationCode(req.Code) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Код подтверждения должен состоять из 6 цифр"})
 		return
 	}
 
@@ -240,7 +250,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	if !utils.CheckPasswordHash(req.Password, user.Password) {
+	// Для OAuth пользователей пароль не требуется
+	if user.AuthProvider == "yandex" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Войдите через Яндекс"})
+		return
+	}
+
+	if user.Password == "" || !utils.CheckPasswordHash(req.Password, user.Password) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Неверный email или пароль"})
 		return
 	}

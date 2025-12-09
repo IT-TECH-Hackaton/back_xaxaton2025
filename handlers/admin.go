@@ -96,6 +96,11 @@ func (h *AdminHandler) GetUsers(c *gin.Context) {
 func (h *AdminHandler) GetUser(c *gin.Context) {
 	userID := c.Param("id")
 
+	if !utils.ValidateUUID(userID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID пользователя"})
+		return
+	}
+
 	var user models.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
@@ -114,6 +119,12 @@ func (h *AdminHandler) GetUser(c *gin.Context) {
 
 func (h *AdminHandler) UpdateUser(c *gin.Context) {
 	userID := c.Param("id")
+
+	if !utils.ValidateUUID(userID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID пользователя"})
+		return
+	}
+
 	var req UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
@@ -131,14 +142,26 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "ФИО должно содержать только русские буквы"})
 			return
 		}
+		if !utils.ValidateStringLength(req.FullName, 2, 100) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ФИО должно быть от 2 до 100 символов"})
+			return
+		}
 		user.FullName = req.FullName
 	}
 
 	if req.Role != "" {
+		if !utils.ValidateRole(req.Role) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверная роль. Допустимые значения: Пользователь, Администратор"})
+			return
+		}
 		user.Role = models.UserRole(req.Role)
 	}
 
 	if req.Status != "" {
+		if !utils.ValidateUserStatus(req.Status) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный статус. Допустимые значения: Активен, Удален"})
+			return
+		}
 		user.Status = models.UserStatus(req.Status)
 	}
 
@@ -152,6 +175,12 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 
 func (h *AdminHandler) ResetUserPassword(c *gin.Context) {
 	userID := c.Param("id")
+
+	if !utils.ValidateUUID(userID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID пользователя"})
+		return
+	}
+
 	var req ResetUserPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
@@ -189,6 +218,11 @@ func (h *AdminHandler) ResetUserPassword(c *gin.Context) {
 
 func (h *AdminHandler) DeleteUser(c *gin.Context) {
 	userID := c.Param("id")
+
+	if !utils.ValidateUUID(userID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID пользователя"})
+		return
+	}
 
 	var user models.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {

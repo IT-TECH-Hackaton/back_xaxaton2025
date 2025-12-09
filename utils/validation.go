@@ -39,3 +39,33 @@ func ValidatePassword(password string) bool {
 	return hasLetter && hasDigit && hasSpecial
 }
 
+func ValidateUUID(uuidStr string) bool {
+	uuidRegex := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	return uuidRegex.MatchString(uuidStr)
+}
+
+func ValidateStringLength(str string, min, max int) bool {
+	length := len([]rune(str))
+	return length >= min && length <= max
+}
+
+func ValidateVerificationCode(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	codeRegex := regexp.MustCompile(`^[0-9]{6}$`)
+	return codeRegex.MatchString(code)
+}
+
+func ValidateRole(role string) bool {
+	return role == "Пользователь" || role == "Администратор"
+}
+
+func ValidateUserStatus(status string) bool {
+	return status == "Активен" || status == "Удален"
+}
+
+func ValidateEventStatus(status string) bool {
+	return status == "Активное" || status == "Прошедшее" || status == "Отклоненное"
+}
+

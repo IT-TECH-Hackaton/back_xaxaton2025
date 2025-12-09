@@ -5,6 +5,7 @@ import (
 
 	"bekend/database"
 	"bekend/models"
+	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -23,6 +24,12 @@ type CreateReviewRequest struct {
 
 func (h *ReviewHandler) CreateReview(c *gin.Context) {
 	eventID := c.Param("id")
+
+	if !utils.ValidateUUID(eventID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID события"})
+		return
+	}
+
 	userID, _ := c.Get("userID")
 
 	var event models.Event
@@ -54,6 +61,16 @@ func (h *ReviewHandler) CreateReview(c *gin.Context) {
 		return
 	}
 
+	if req.Rating < 1 || req.Rating > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Рейтинг должен быть от 1 до 5"})
+		return
+	}
+
+	if req.Comment != "" && !utils.ValidateStringLength(req.Comment, 0, 2000) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Комментарий должен быть до 2000 символов"})
+		return
+	}
+
 	review := models.EventReview{
 		EventID: uuid.MustParse(eventID),
 		UserID:  userID.(uuid.UUID),
@@ -82,6 +99,11 @@ func (h *ReviewHandler) CreateReview(c *gin.Context) {
 
 func (h *ReviewHandler) GetEventReviews(c *gin.Context) {
 	eventID := c.Param("id")
+
+	if !utils.ValidateUUID(eventID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID события"})
+		return
+	}
 
 	var reviews []models.EventReview
 	if err := database.DB.Preload("User").Where("event_id = ?", eventID).Order("created_at DESC").Find(&reviews).Error; err != nil {
@@ -119,6 +141,12 @@ func (h *ReviewHandler) GetEventReviews(c *gin.Context) {
 
 func (h *ReviewHandler) UpdateReview(c *gin.Context) {
 	reviewID := c.Param("reviewId")
+
+	if !utils.ValidateUUID(reviewID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID отзыва"})
+		return
+	}
+
 	userID, _ := c.Get("userID")
 
 	var review models.EventReview
@@ -130,6 +158,16 @@ func (h *ReviewHandler) UpdateReview(c *gin.Context) {
 	var req CreateReviewRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
+		return
+	}
+
+	if req.Rating < 1 || req.Rating > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Рейтинг должен быть от 1 до 5"})
+		return
+	}
+
+	if req.Comment != "" && !utils.ValidateStringLength(req.Comment, 0, 2000) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Комментарий должен быть до 2000 символов"})
 		return
 	}
 
@@ -146,6 +184,12 @@ func (h *ReviewHandler) UpdateReview(c *gin.Context) {
 
 func (h *ReviewHandler) DeleteReview(c *gin.Context) {
 	reviewID := c.Param("reviewId")
+
+	if !utils.ValidateUUID(reviewID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID отзыва"})
+		return
+	}
+
 	userID, _ := c.Get("userID")
 
 	var review models.EventReview

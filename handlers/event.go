@@ -8,6 +8,7 @@ import (
 	"bekend/database"
 	"bekend/models"
 	"bekend/services"
+	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -114,6 +115,12 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 
 func (h *EventHandler) GetEvent(c *gin.Context) {
 	eventID := c.Param("id")
+
+	if !utils.ValidateUUID(eventID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID события"})
+		return
+	}
+
 	userID, _ := c.Get("userID")
 
 	var event models.Event
@@ -178,6 +185,21 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 		return
 	}
 
+	if !utils.ValidateStringLength(req.Title, 1, 200) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Название события должно быть от 1 до 200 символов"})
+		return
+	}
+
+	if !utils.ValidateStringLength(req.FullDescription, 1, 5000) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Полное описание должно быть от 1 до 5000 символов"})
+		return
+	}
+
+	if req.ShortDescription != "" && !utils.ValidateStringLength(req.ShortDescription, 1, 500) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Краткое описание должно быть от 1 до 500 символов"})
+		return
+	}
+
 	if req.StartDate.Before(time.Now()) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Дата начала должна быть в будущем"})
 		return
@@ -185,6 +207,11 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 
 	if req.EndDate.Before(req.StartDate) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Дата окончания должна быть позже даты начала"})
+		return
+	}
+
+	if req.MaxParticipants != nil && *req.MaxParticipants < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Максимальное количество участников должно быть больше 0"})
 		return
 	}
 
@@ -232,6 +259,12 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 
 func (h *EventHandler) UpdateEvent(c *gin.Context) {
 	eventID := c.Param("id")
+
+	if !utils.ValidateUUID(eventID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID события"})
+		return
+	}
+
 	var req UpdateEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
@@ -245,30 +278,62 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 	}
 
 	if req.Title != "" {
+		if !utils.ValidateStringLength(req.Title, 1, 200) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Название события должно быть от 1 до 200 символов"})
+			return
+		}
 		event.Title = req.Title
 	}
 	if req.ShortDescription != "" {
+		if !utils.ValidateStringLength(req.ShortDescription, 1, 500) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Краткое описание должно быть от 1 до 500 символов"})
+			return
+		}
 		event.ShortDescription = req.ShortDescription
 	}
 	if req.FullDescription != "" {
+		if !utils.ValidateStringLength(req.FullDescription, 1, 5000) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Полное описание должно быть от 1 до 5000 символов"})
+			return
+		}
 		event.FullDescription = req.FullDescription
 	}
 	if !req.StartDate.IsZero() {
+		if req.StartDate.Before(time.Now()) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Дата начала должна быть в будущем"})
+			return
+		}
 		event.StartDate = req.StartDate
 	}
 	if !req.EndDate.IsZero() {
+		if req.EndDate.Before(event.StartDate) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Дата окончания должна быть позже даты начала"})
+			return
+		}
 		event.EndDate = req.EndDate
 	}
 	if req.ImageURL != "" {
 		event.ImageURL = req.ImageURL
 	}
 	if req.PaymentInfo != "" {
+		if !utils.ValidateStringLength(req.PaymentInfo, 0, 2000) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Информация об оплате должна быть до 2000 символов"})
+			return
+		}
 		event.PaymentInfo = req.PaymentInfo
 	}
 	if req.MaxParticipants != nil {
+		if *req.MaxParticipants < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Максимальное количество участников должно быть больше 0"})
+			return
+		}
 		event.MaxParticipants = req.MaxParticipants
 	}
 	if req.Status != "" {
+		if !utils.ValidateEventStatus(req.Status) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный статус. Допустимые значения: Активное, Прошедшее, Отклоненное"})
+			return
+		}
 		event.Status = models.EventStatus(req.Status)
 	}
 
@@ -292,6 +357,11 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 func (h *EventHandler) DeleteEvent(c *gin.Context) {
 	eventID := c.Param("id")
 
+	if !utils.ValidateUUID(eventID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID события"})
+		return
+	}
+
 	if err := database.DB.Where("id = ?", eventID).Delete(&models.Event{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при удалении события"})
 		return
@@ -302,6 +372,12 @@ func (h *EventHandler) DeleteEvent(c *gin.Context) {
 
 func (h *EventHandler) JoinEvent(c *gin.Context) {
 	eventID := c.Param("id")
+
+	if !utils.ValidateUUID(eventID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID события"})
+		return
+	}
+
 	userID, _ := c.Get("userID")
 
 	var event models.Event
@@ -349,6 +425,12 @@ func (h *EventHandler) JoinEvent(c *gin.Context) {
 
 func (h *EventHandler) LeaveEvent(c *gin.Context) {
 	eventID := c.Param("id")
+
+	if !utils.ValidateUUID(eventID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID события"})
+		return
+	}
+
 	userID, _ := c.Get("userID")
 
 	var participant models.EventParticipant
@@ -378,6 +460,12 @@ func (h *EventHandler) LeaveEvent(c *gin.Context) {
 
 func (h *EventHandler) ExportParticipants(c *gin.Context) {
 	eventID := c.Param("id")
+
+	if !utils.ValidateUUID(eventID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID события"})
+		return
+	}
+
 	format := c.Query("format")
 
 	var participants []models.EventParticipant

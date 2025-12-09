@@ -5,6 +5,7 @@ import (
 
 	"bekend/database"
 	"bekend/models"
+	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -64,6 +65,14 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	if req.FullName != "" {
+		if !utils.ValidateFullName(req.FullName) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ФИО должно содержать только русские буквы"})
+			return
+		}
+		if !utils.ValidateStringLength(req.FullName, 2, 100) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ФИО должно быть от 2 до 100 символов"})
+			return
+		}
 		user.FullName = req.FullName
 	}
 
