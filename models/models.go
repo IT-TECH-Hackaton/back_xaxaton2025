@@ -10,6 +10,24 @@ func AutoMigrate(db *gorm.DB) error {
 		&EventReview{},
 		&EmailVerification{},
 		&PasswordReset{},
+		&Interest{},
+		&UserInterest{},
+		&EventMatching{},
+		&MatchRequest{},
+		&MicroCommunity{},
+		&CommunityMember{},
 	)
+}
+
+func IsValidUserRole(role UserRole) bool {
+	return role == RoleUser || role == RoleAdmin
+}
+
+func IsValidUserStatus(status UserStatus) bool {
+	return status == UserStatusActive || status == UserStatusDeleted
+}
+
+func IsValidEventStatus(status EventStatus) bool {
+	return status == EventStatusActive || status == EventStatusPast || status == EventStatusRejected
 }
 
