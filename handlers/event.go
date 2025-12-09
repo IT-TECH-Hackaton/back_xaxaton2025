@@ -3,9 +3,11 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"bekend/database"
+	"bekend/dto"
 	"bekend/models"
 	"bekend/services"
 	"bekend/utils"
@@ -13,25 +15,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
+	"go.uber.org/zap"
 )
 
 type EventHandler struct {
 	emailService *services.EmailService
+	logger       *zap.Logger
 }
 
 func NewEventHandler() *EventHandler {
 	return &EventHandler{
 		emailService: services.NewEmailService(),
-	}
-}
-
-type EventHandler struct {
-	logger *zap.Logger
-}
-
-func NewEventHandler() *EventHandler {
-	return &EventHandler{
-		logger: utils.GetLogger(),
+		logger:       utils.GetLogger(),
 	}
 }
 
@@ -87,32 +82,34 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 	var total int64
 	query.Model(&models.Event{}).Count(&total)
 
-	if err := query.Offset(offset).Limit(limitInt).Order("created_at DESC").Find(&events).Error; err != nil {
+	if err := query.Offset(offset).Limit(limitInt).Order("start_date ASC").Find(&events).Error; err != nil {
+		h.logger.Error("Ошибка при получении событий", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении событий"})
 		return
 	}
 
-	result := make([]gin.H, len(events))
+	result := make([]dto.EventResponse, len(events))
 	for i, event := range events {
-		result[i] = gin.H{
-			"id":              event.ID,
-			"title":           event.Title,
-			"shortDescription": event.ShortDescription,
-			"fullDescription": event.FullDescription,
-			"startDate":       event.StartDate,
-			"endDate":         event.EndDate,
-			"imageURL":        event.ImageURL,
-			"paymentInfo":    event.PaymentInfo,
-			"maxParticipants": event.MaxParticipants,
-			"status":          event.Status,
-			"participantsCount": event.GetParticipantsCount(),
-			"address":         event.Address,
-			"latitude":        event.Latitude,
-			"longitude":       event.Longitude,
-			"yandexMapLink":   event.YandexMapLink,
-			"organizer": gin.H{
-				"id":   event.Organizer.ID,
-				"name": event.Organizer.FullName,
+		result[i] = dto.EventResponse{
+			ID:               event.ID.String(),
+			Title:            event.Title,
+			ShortDescription: event.ShortDescription,
+			FullDescription:  event.FullDescription,
+			StartDate:        event.StartDate,
+			EndDate:          event.EndDate,
+			ImageURL:         event.ImageURL,
+			PaymentInfo:      event.PaymentInfo,
+			MaxParticipants:  event.MaxParticipants,
+			Status:           string(event.Status),
+			ParticipantsCount: event.GetParticipantsCount(),
+			Address:          event.Address,
+			Latitude:         event.Latitude,
+			Longitude:        event.Longitude,
+			YandexMapLink:    event.YandexMapLink,
+			Organizer: dto.UserInfo{
+				ID:       event.Organizer.ID.String(),
+				FullName: event.Organizer.FullName,
+				Email:    event.Organizer.Email,
 			},
 		}
 	}
@@ -141,6 +138,7 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 
 	var event models.Event
 	if err := database.DB.Preload("Organizer").Preload("Participants.User").Where("id = ?", eventID).First(&event).Error; err != nil {
+		h.logger.Error("Событие не найдено", zap.String("eventID", eventID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Событие не найдено"})
 		return
 	}
@@ -172,28 +170,29 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"id":              event.ID,
-		"title":           event.Title,
-		"shortDescription": event.ShortDescription,
-		"fullDescription": event.FullDescription,
-		"startDate":       event.StartDate,
-		"endDate":         event.EndDate,
-		"imageURL":        event.ImageURL,
-		"paymentInfo":    event.PaymentInfo,
-		"maxParticipants": event.MaxParticipants,
-		"status":          event.Status,
-		"participantsCount": event.GetParticipantsCount(),
-		"isParticipant":    isParticipant,
-		"averageRating":    avgRating,
-		"totalReviews":    totalReviews,
-		"address":         event.Address,
-		"latitude":        event.Latitude,
-		"longitude":       event.Longitude,
-		"yandexMapLink":   event.YandexMapLink,
-		"organizer": gin.H{
-			"id":   event.Organizer.ID,
-			"name": event.Organizer.FullName,
+	c.JSON(http.StatusOK, dto.EventDetailResponse{
+		ID:               event.ID.String(),
+		Title:            event.Title,
+		ShortDescription: event.ShortDescription,
+		FullDescription:  event.FullDescription,
+		StartDate:        event.StartDate,
+		EndDate:          event.EndDate,
+		ImageURL:         event.ImageURL,
+		PaymentInfo:      event.PaymentInfo,
+		MaxParticipants:  event.MaxParticipants,
+		Status:           string(event.Status),
+		ParticipantsCount: event.GetParticipantsCount(),
+		IsParticipant:    isParticipant,
+		AverageRating:    avgRating,
+		TotalReviews:     totalReviews,
+		Address:          event.Address,
+		Latitude:         event.Latitude,
+		Longitude:        event.Longitude,
+		YandexMapLink:    event.YandexMapLink,
+		Organizer: dto.UserInfo{
+			ID:       event.Organizer.ID.String(),
+			FullName: event.Organizer.FullName,
+			Email:    event.Organizer.Email,
 		},
 	})
 }
@@ -201,6 +200,7 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 func (h *EventHandler) CreateEvent(c *gin.Context) {
 	var req dto.CreateEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Warn("Неверные данные при создании события", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
 		return
 	}
@@ -235,7 +235,6 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 		return
 	}
 
-	// Валидация координат
 	if req.Latitude != nil {
 		if *req.Latitude < -90 || *req.Latitude > 90 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Широта должна быть от -90 до 90"})
@@ -278,6 +277,7 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 	}
 
 	if err := database.DB.Create(&event).Error; err != nil {
+		h.logger.Error("Ошибка при создании события в БД", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании события"})
 		return
 	}
@@ -295,13 +295,17 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 				}
 				if err := database.DB.Create(&participant).Error; err == nil {
 					go h.emailService.SendEventNotification(user.Email, event.Title, "Вы были добавлены в новое событие: "+event.Title+". Дата начала: "+event.StartDate.Format("02.01.2006 15:04"))
+				} else {
+					h.logger.Error("Ошибка добавления участника при создании события", zap.Any("userID", user.ID), zap.String("eventID", event.ID.String()), zap.Error(err))
 				}
 			}
+		} else {
+			h.logger.Error("Ошибка получения пользователей для добавления в событие", zap.Error(err))
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":   event.ID,
+		"id":      event.ID,
 		"message": "Событие создано",
 	})
 }
@@ -314,14 +318,16 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 		return
 	}
 
-	var req UpdateEventRequest
+	var req dto.UpdateEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Warn("Неверные данные при обновлении события", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
 		return
 	}
 
 	var event models.Event
 	if err := database.DB.Where("id = ?", eventID).First(&event).Error; err != nil {
+		h.logger.Error("Событие не найдено для обновления", zap.String("eventID", eventID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Событие не найдено"})
 		return
 	}
@@ -379,7 +385,7 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 		event.MaxParticipants = req.MaxParticipants
 	}
 	if req.Status != "" {
-		if !utils.ValidateEventStatus(req.Status) {
+		if !models.IsValidEventStatus(models.EventStatus(req.Status)) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный статус. Допустимые значения: Активное, Прошедшее, Отклоненное"})
 			return
 		}
@@ -415,6 +421,7 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 	}
 
 	if err := database.DB.Save(&event).Error; err != nil {
+		h.logger.Error("Ошибка при обновлении события в БД", zap.String("eventID", eventID), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при обновлении события"})
 		return
 	}
@@ -425,6 +432,8 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 		var user models.User
 		if err := database.DB.Where("id = ?", p.UserID).First(&user).Error; err == nil {
 			go h.emailService.SendEventNotification(user.Email, event.Title, "Данные события были изменены. Проверьте обновленную информацию о событии.")
+		} else {
+			h.logger.Error("Ошибка получения пользователя для уведомления об изменении события", zap.Any("userID", p.UserID), zap.Error(err))
 		}
 	}
 
@@ -440,6 +449,7 @@ func (h *EventHandler) DeleteEvent(c *gin.Context) {
 	}
 
 	if err := database.DB.Where("id = ?", eventID).Delete(&models.Event{}).Error; err != nil {
+		h.logger.Error("Ошибка при удалении события из БД", zap.String("eventID", eventID), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при удалении события"})
 		return
 	}
@@ -459,6 +469,7 @@ func (h *EventHandler) JoinEvent(c *gin.Context) {
 
 	var event models.Event
 	if err := database.DB.Preload("Participants").Where("id = ?", eventID).First(&event).Error; err != nil {
+		h.logger.Error("Событие не найдено для присоединения", zap.String("eventID", eventID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Событие не найдено"})
 		return
 	}
@@ -469,7 +480,10 @@ func (h *EventHandler) JoinEvent(c *gin.Context) {
 	}
 
 	if event.MaxParticipants != nil && event.GetParticipantsCount() >= *event.MaxParticipants {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Достигнут максимальный лимит участников"})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Достигнут максимальный лимит участников",
+			"message": "Достигнут максимальный лимит участников",
+		})
 		return
 	}
 
@@ -485,6 +499,7 @@ func (h *EventHandler) JoinEvent(c *gin.Context) {
 	}
 
 	if err := database.DB.Create(&participant).Error; err != nil {
+		h.logger.Error("Ошибка при подтверждении участия в БД", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при подтверждении участия"})
 		return
 	}
@@ -494,10 +509,16 @@ func (h *EventHandler) JoinEvent(c *gin.Context) {
 		var user models.User
 		if err := database.DB.Where("id = ?", userID).First(&user).Error; err == nil {
 			go h.emailService.SendEventNotification(organizer.Email, event.Title, user.FullName+" подтвердил участие в событии")
+		} else {
+			h.logger.Error("Ошибка получения пользователя для уведомления организатора о присоединении", zap.Any("userID", userID), zap.Error(err))
 		}
+	} else {
+		h.logger.Error("Ошибка получения организатора для уведомления о присоединении", zap.Any("organizerID", event.OrganizerID), zap.Error(err))
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Участие подтверждено"})
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Участие успешно подтверждено",
+	})
 }
 
 func (h *EventHandler) LeaveEvent(c *gin.Context) {
@@ -517,6 +538,7 @@ func (h *EventHandler) LeaveEvent(c *gin.Context) {
 	}
 
 	if err := database.DB.Delete(&participant).Error; err != nil {
+		h.logger.Error("Ошибка при отмене участия в БД", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при отмене участия"})
 		return
 	}
@@ -528,11 +550,19 @@ func (h *EventHandler) LeaveEvent(c *gin.Context) {
 			var user models.User
 			if err := database.DB.Where("id = ?", userID).First(&user).Error; err == nil {
 				go h.emailService.SendEventNotification(organizer.Email, event.Title, user.FullName+" отменил участие в событии")
+			} else {
+				h.logger.Error("Ошибка получения пользователя для уведомления организатора об отмене участия", zap.Any("userID", userID), zap.Error(err))
 			}
+		} else {
+			h.logger.Error("Ошибка получения организатора для уведомления об отмене участия", zap.Any("organizerID", event.OrganizerID), zap.Error(err))
 		}
+	} else {
+		h.logger.Error("Ошибка получения события для уведомления об отмене участия", zap.String("eventID", eventID), zap.Error(err))
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Участие отменено"})
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Участие успешно отменено",
+	})
 }
 
 func (h *EventHandler) ExportParticipants(c *gin.Context) {
@@ -547,6 +577,7 @@ func (h *EventHandler) ExportParticipants(c *gin.Context) {
 
 	var participants []models.EventParticipant
 	if err := database.DB.Preload("User").Preload("Event").Where("event_id = ?", eventID).Find(&participants).Error; err != nil {
+		h.logger.Error("Ошибка при получении участников для экспорта", zap.String("eventID", eventID), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении участников"})
 		return
 	}
@@ -565,6 +596,7 @@ func (h *EventHandler) ExportParticipants(c *gin.Context) {
 	f := excelize.NewFile()
 	defer func() {
 		if err := f.Close(); err != nil {
+			h.logger.Error("Ошибка при закрытии файла Excel", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании файла"})
 		}
 	}()
@@ -584,8 +616,8 @@ func (h *EventHandler) ExportParticipants(c *gin.Context) {
 	c.Header("Content-Disposition", "attachment; filename=participants.xlsx")
 
 	if err := f.Write(c.Writer); err != nil {
+		h.logger.Error("Ошибка при записи файла Excel", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при экспорте"})
 		return
 	}
 }
-

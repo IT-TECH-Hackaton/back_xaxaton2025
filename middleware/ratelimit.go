@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,8 +11,20 @@ import (
 	"github.com/ulule/limiter/v3/drivers/store/memory"
 )
 
+var (
+	rateLimitStore = memory.NewStore()
+	rateLimitStoreOnce sync.Once
+)
+
+func getRateLimitStore() limiter.Store {
+	rateLimitStoreOnce.Do(func() {
+		rateLimitStore = memory.NewStore()
+	})
+	return rateLimitStore
+}
+
 func RateLimitMiddleware(rate string) gin.HandlerFunc {
-	store := memory.NewStore()
+	store := getRateLimitStore()
 	
 	defaultRate := limiter.Rate{
 		Period: 1 * time.Minute,

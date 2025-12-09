@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
-	"log"
 	"time"
 
 	"bekend/config"
+	"bekend/models"
+	"bekend/utils"
 	"gopkg.in/gomail.v2"
+	"go.uber.org/zap"
 )
 
 type EmailService struct {
@@ -34,7 +36,7 @@ func (es *EmailService) SendEmail(to, subject, body string) error {
 	m.SetBody("text/html", body)
 
 	if err := es.dialer.DialAndSend(m); err != nil {
-		logger.GetLogger().Error("Ошибка отправки email",
+		utils.GetLogger().Error("Ошибка отправки email",
 			zap.String("to", to),
 			zap.String("subject", subject),
 			zap.Error(err),
@@ -42,7 +44,7 @@ func (es *EmailService) SendEmail(to, subject, body string) error {
 		return err
 	}
 
-	logger.GetLogger().Info("Email отправлен",
+	utils.GetLogger().Info("Email отправлен",
 		zap.String("to", to),
 		zap.String("subject", subject),
 	)
@@ -272,5 +274,99 @@ func (es *EmailService) SendEventNotification(email, eventTitle, message string)
 	}
 
 	return es.SendEmail(email, fmt.Sprintf("Уведомление: %s", eventTitle), bodyBuffer.String())
+}
+
+func (es *EmailService) SendPasswordToUser(email, fullName, password string) error {
+	tmpl := `
+	<!DOCTYPE html>
+	<html>
+	<head>
+		<meta charset="UTF-8">
+		<style>
+			body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+			.container { max-width: 600px; margin: 0 auto; padding: 20px; }
+			.password-box { background-color: #f4f4f4; border: 2px solid #007bff; border-radius: 5px; padding: 20px; margin: 20px 0; text-align: center; font-size: 18px; font-weight: bold; }
+			.alert { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h2>Новый пароль для вашего аккаунта</h2>
+			<p>Здравствуйте, {{.FullName}}!</p>
+			<p>Администратор установил новый пароль для вашего аккаунта.</p>
+			<div class="password-box">
+				Ваш новый пароль: {{.Password}}
+			</div>
+			<div class="alert">
+				<p><strong>Важно:</strong> Рекомендуем изменить этот пароль после первого входа в систему.</p>
+			</div>
+			<p>С уважением,<br>Команда поддержки</p>
+		</div>
+	</body>
+	</html>
+	`
+
+	t, err := template.New("password").Parse(tmpl)
+	if err != nil {
+		return err
+	}
+
+	var bodyBuffer bytes.Buffer
+	if err := t.Execute(&bodyBuffer, map[string]string{
+		"FullName": fullName,
+		"Password": password,
+	}); err != nil {
+		return err
+	}
+
+	return es.SendEmail(email, "Новый пароль для вашего аккаунта", bodyBuffer.String())
+}
+
+func (es *EmailService) SendCommunityEventNotification(email, fullName, communityName string, event *models.Event) error {
+	tmpl := `
+	<!DOCTYPE html>
+	<html>
+	<head>
+		<meta charset="UTF-8">
+		<style>
+			body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+			.container { max-width: 600px; margin: 0 auto; padding: 20px; }
+			.event-box { background-color: #f4f4f4; border-left: 4px solid #007bff; padding: 15px; margin: 20px 0; }
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h2>Новое событие в сообществе "{{.CommunityName}}"</h2>
+			<p>Здравствуйте, {{.FullName}}!</p>
+			<p>В вашем сообществе появилось новое событие, которое может вас заинтересовать:</p>
+			<div class="event-box">
+				<h3>{{.EventTitle}}</h3>
+				<p><strong>Дата начала:</strong> {{.StartDate}}</p>
+				{{if .ShortDescription}}<p>{{.ShortDescription}}</p>{{end}}
+			</div>
+			<p>Не пропустите это событие!</p>
+		</div>
+	</body>
+	</html>
+	`
+
+	t, err := template.New("communityEvent").Parse(tmpl)
+	if err != nil {
+		return err
+	}
+
+	var bodyBuffer bytes.Buffer
+	startDate := event.StartDate.Format("02.01.2006 в 15:04")
+	if err := t.Execute(&bodyBuffer, map[string]string{
+		"FullName":      fullName,
+		"CommunityName": communityName,
+		"EventTitle":    event.Title,
+		"StartDate":     startDate,
+		"ShortDescription": event.ShortDescription,
+	}); err != nil {
+		return err
+	}
+
+	return es.SendEmail(email, fmt.Sprintf("Новое событие в сообществе '%s': %s", communityName, event.Title), bodyBuffer.String())
 }
 

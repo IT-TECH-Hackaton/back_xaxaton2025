@@ -1,50 +1,33 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
+	"bekend/config"
 	"bekend/database"
+	"bekend/dto"
 	"bekend/models"
 	"bekend/services"
 	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type AdminHandler struct {
 	emailService *services.EmailService
+	logger       *zap.Logger
 }
 
 func NewAdminHandler() *AdminHandler {
 	return &AdminHandler{
 		emailService: services.NewEmailService(),
+		logger:       utils.GetLogger(),
 	}
-}
-
-type UpdateUserRequest struct {
-	FullName string `json:"fullName"`
-	Role     string `json:"role"`
-	Status   string `json:"status"`
-}
-
-type ResetUserPasswordRequest struct {
-	Password string `json:"password" binding:"required"`
-}
-
-type CreateUserRequest struct {
-	FullName string `json:"fullName" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
-	Role     string `json:"role"`
-}
-
-type UserFilterRequest struct {
-	FullName   string    `json:"fullName"`
-	Role       string    `json:"role"`
-	Status     string    `json:"status"`
-	DateFrom   time.Time `json:"dateFrom"`
-	DateTo     time.Time `json:"dateTo"`
 }
 
 func (h *AdminHandler) GetUsers(c *gin.Context) {
@@ -67,8 +50,8 @@ func (h *AdminHandler) GetUsers(c *gin.Context) {
 
 	fullName := c.Query("fullName")
 	if fullName != "" {
-		if !utils.ValidateStringLength(fullName, 2, 100) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "ФИО должно быть от 2 до 100 символов"})
+		if !utils.ValidateStringLength(fullName, 1, 100) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ФИО должно быть от 1 до 100 символов"})
 			return
 		}
 		query = query.Where("full_name ILIKE ?", "%"+fullName+"%")
@@ -102,7 +85,7 @@ func (h *AdminHandler) GetUsers(c *gin.Context) {
 	dateTo := c.Query("dateTo")
 	if dateTo != "" {
 		if t, err := time.Parse("2006-01-02", dateTo); err == nil {
-			query = query.Where("created_at <= ?", t)
+			query = query.Where("created_at <= ?", t.Add(24*time.Hour))
 		}
 	}
 
@@ -110,30 +93,31 @@ func (h *AdminHandler) GetUsers(c *gin.Context) {
 	query.Model(&models.User{}).Count(&total)
 
 	if err := query.Offset(offset).Limit(limitInt).Order("created_at DESC").Find(&users).Error; err != nil {
+		h.logger.Error("Ошибка при получении пользователей", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении пользователей"})
 		return
 	}
 
-	result := make([]gin.H, len(users))
+	result := make([]dto.UserResponse, len(users))
 	for i, user := range users {
-		result[i] = gin.H{
-			"id":        user.ID,
-			"fullName":  user.FullName,
-			"email":     user.Email,
-			"role":      string(user.Role),
-			"status":    string(user.Status),
-			"createdAt": user.CreatedAt,
+		result[i] = dto.UserResponse{
+			ID:        user.ID.String(),
+			FullName:  user.FullName,
+			Email:     user.Email,
+			Role:      string(user.Role),
+			Status:    string(user.Status),
+			CreatedAt: user.CreatedAt.Format("2006-01-02"),
 		}
 	}
 
 	totalPages := int((total + int64(limitInt) - 1) / int64(limitInt))
-	c.JSON(http.StatusOK, gin.H{
-		"data": result,
-		"pagination": gin.H{
-			"page":       pageInt,
-			"limit":     limitInt,
-			"total":     total,
-			"totalPages": totalPages,
+	c.JSON(http.StatusOK, dto.PaginationResponse{
+		Data: result,
+		Pagination: dto.Pagination{
+			Page:       pageInt,
+			Limit:      limitInt,
+			Total:      total,
+			TotalPages: totalPages,
 		},
 	})
 }
@@ -148,17 +132,18 @@ func (h *AdminHandler) GetUser(c *gin.Context) {
 
 	var user models.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+		h.logger.Error("Пользователь не найден админом", zap.String("userID", userID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"id":        user.ID,
-		"fullName":  user.FullName,
-		"email":     user.Email,
-		"role":      string(user.Role),
-		"status":    string(user.Status),
-		"createdAt": user.CreatedAt,
+	c.JSON(http.StatusOK, dto.UserResponse{
+		ID:        user.ID.String(),
+		FullName:  user.FullName,
+		Email:     user.Email,
+		Role:      string(user.Role),
+		Status:    string(user.Status),
+		CreatedAt: user.CreatedAt.Format("2006-01-02"),
 	})
 }
 
@@ -170,14 +155,16 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 		return
 	}
 
-	var req UpdateUserRequest
+	var req dto.UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Warn("Неверные данные при обновлении пользователя админом", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
 		return
 	}
 
 	var user models.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+		h.logger.Error("Пользователь не найден для обновления админом", zap.String("userID", userID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
 		return
 	}
@@ -211,6 +198,7 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 	}
 
 	if err := database.DB.Save(&user).Error; err != nil {
+		h.logger.Error("Ошибка сохранения обновленного пользователя админом", zap.String("userID", userID), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при обновлении пользователя"})
 		return
 	}
@@ -226,8 +214,9 @@ func (h *AdminHandler) ResetUserPassword(c *gin.Context) {
 		return
 	}
 
-	var req ResetUserPasswordRequest
+	var req dto.ResetUserPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Warn("Неверные данные при сбросе пароля админом", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
 		return
 	}
@@ -239,52 +228,34 @@ func (h *AdminHandler) ResetUserPassword(c *gin.Context) {
 
 	var user models.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+		h.logger.Error("Пользователь не найден для сброса пароля админом", zap.String("userID", userID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
 		return
 	}
 
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
+		h.logger.Error("Ошибка хеширования пароля админом", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при обновлении пароля"})
 		return
 	}
 
 	user.Password = hashedPassword
-	user.EmailVerified = false
 	if err := database.DB.Save(&user).Error; err != nil {
+		h.logger.Error("Ошибка сохранения нового пароля админом", zap.String("userID", userID), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при обновлении пароля"})
 		return
 	}
 
-	resetToken, err := utils.GenerateResetToken()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка генерации токена"})
-		return
-	}
+	go func() {
+		if err := h.emailService.SendPasswordToUser(user.Email, user.FullName, req.Password); err != nil {
+			h.logger.Error("Ошибка отправки пароля пользователю", zap.String("email", user.Email), zap.Error(err))
+		}
+	}()
 
-	passwordReset := models.PasswordReset{
-		Email:     user.Email,
-		Token:     resetToken,
-		ExpiresAt: time.Now().Add(24 * time.Hour),
-		Used:      false,
-	}
-
-	database.DB.Where("email = ?", user.Email).Delete(&models.PasswordReset{})
-	if err := database.DB.Create(&passwordReset).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании токена сброса"})
-		return
-	}
-
-	resetURL := fmt.Sprintf("%s/auth/reset-password?token=%s", config.AppConfig.FrontendURL, resetToken)
-	if err := h.emailService.SendPasswordResetLink(user.Email, resetToken); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Пароль изменен. Ссылка для установки нового пароля отправлена на почту пользователя",
-			"resetURL": resetURL,
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Пароль изменен. Ссылка для установки нового пароля отправлена на почту пользователя"})
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Пароль успешно изменен и отправлен на почту пользователя",
+	})
 }
 
 func (h *AdminHandler) DeleteUser(c *gin.Context) {
@@ -297,22 +268,25 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 
 	var user models.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+		h.logger.Error("Пользователь не найден для удаления админом", zap.String("userID", userID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
 		return
 	}
 
 	user.Status = models.UserStatusDeleted
 	if err := database.DB.Save(&user).Error; err != nil {
+		h.logger.Error("Ошибка удаления пользователя админом из БД", zap.String("userID", userID), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при удалении пользователя"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Пользователь удален"})
+	c.JSON(http.StatusOK, gin.H{"message": "Пользователь помечен как удаленный"})
 }
 
 func (h *AdminHandler) CreateUser(c *gin.Context) {
 	var req dto.CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Warn("Неверные данные при создании пользователя админом", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
 		return
 	}
@@ -339,12 +313,14 @@ func (h *AdminHandler) CreateUser(c *gin.Context) {
 
 	var existingUser models.User
 	if err := database.DB.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
+		h.logger.Info("Попытка создания пользователя админом с существующей почтой", zap.String("email", req.Email))
 		c.JSON(http.StatusConflict, gin.H{"error": "Пользователь с таким email уже существует"})
 		return
 	}
 
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
+		h.logger.Error("Ошибка хеширования пароля при создании пользователя админом", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при хешировании пароля"})
 		return
 	}
@@ -369,19 +345,26 @@ func (h *AdminHandler) CreateUser(c *gin.Context) {
 	}
 
 	if err := database.DB.Create(&user).Error; err != nil {
+		h.logger.Error("Ошибка создания пользователя админом в БД", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании пользователя"})
 		return
 	}
 
-	go h.emailService.SendWelcomeEmail(user.Email, user.FullName)
+	go func() {
+		if err := h.emailService.SendWelcomeEmail(user.Email, user.FullName); err != nil {
+			h.logger.Error("Ошибка отправки приветственного письма при создании пользователя админом", zap.String("email", user.Email), zap.Error(err))
+		}
+	}()
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Пользователь успешно создан",
-		"user": gin.H{
-			"id":       user.ID,
-			"email":    user.Email,
-			"fullName": user.FullName,
-			"role":     user.Role,
+		"user": dto.UserResponse{
+			ID:        user.ID.String(),
+			Email:     user.Email,
+			FullName:  user.FullName,
+			Role:      string(user.Role),
+			Status:    string(user.Status),
+			CreatedAt: user.CreatedAt.Format("2006-01-02"),
 		},
 	})
 }
@@ -417,45 +400,45 @@ func (h *AdminHandler) GetAdminEvents(c *gin.Context) {
 	query.Model(&models.Event{}).Count(&total)
 
 	if err := query.Offset(offset).Limit(limitInt).Order("created_at DESC").Find(&events).Error; err != nil {
+		h.logger.Error("Ошибка при получении событий для админа", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении событий"})
 		return
 	}
 
-	result := make([]gin.H, len(events))
+	result := make([]dto.EventResponse, len(events))
 	for i, event := range events {
-		result[i] = gin.H{
-			"id":              event.ID,
-			"title":           event.Title,
-			"shortDescription": event.ShortDescription,
-			"fullDescription": event.FullDescription,
-			"startDate":       event.StartDate,
-			"endDate":         event.EndDate,
-			"imageURL":        event.ImageURL,
-			"paymentInfo":    event.PaymentInfo,
-			"maxParticipants": event.MaxParticipants,
-			"status":          event.Status,
-			"participantsCount": event.GetParticipantsCount(),
-			"address":         event.Address,
-			"latitude":        event.Latitude,
-			"longitude":       event.Longitude,
-			"yandexMapLink":   event.YandexMapLink,
-			"organizer": gin.H{
-				"id":   event.Organizer.ID,
-				"name": event.Organizer.FullName,
+		result[i] = dto.EventResponse{
+			ID:               event.ID.String(),
+			Title:            event.Title,
+			ShortDescription: event.ShortDescription,
+			FullDescription:  event.FullDescription,
+			StartDate:        event.StartDate,
+			EndDate:          event.EndDate,
+			ImageURL:         event.ImageURL,
+			PaymentInfo:      event.PaymentInfo,
+			MaxParticipants:  event.MaxParticipants,
+			Status:           string(event.Status),
+			ParticipantsCount: event.GetParticipantsCount(),
+			Address:          event.Address,
+			Latitude:         event.Latitude,
+			Longitude:        event.Longitude,
+			YandexMapLink:    event.YandexMapLink,
+			Organizer: dto.UserInfo{
+				ID:       event.Organizer.ID.String(),
+				FullName: event.Organizer.FullName,
+				Email:    event.Organizer.Email,
 			},
-			"createdAt": event.CreatedAt,
 		}
 	}
 
 	totalPages := int((total + int64(limitInt) - 1) / int64(limitInt))
-	c.JSON(http.StatusOK, gin.H{
-		"data": result,
-		"pagination": gin.H{
-			"page":       pageInt,
-			"limit":     limitInt,
-			"total":     total,
-			"totalPages": totalPages,
+	c.JSON(http.StatusOK, dto.PaginationResponse{
+		Data: result,
+		Pagination: dto.Pagination{
+			Page:       pageInt,
+			Limit:      limitInt,
+			Total:      total,
+			TotalPages: totalPages,
 		},
 	})
 }
-

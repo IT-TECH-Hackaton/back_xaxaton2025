@@ -27,3 +27,12 @@ type UserFilterRequest struct {
 	DateTo   time.Time `json:"dateTo"`
 }
 
+type UserResponse struct {
+	ID        string `json:"id"`
+	FullName  string `json:"fullName"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"createdAt"`
+}
+

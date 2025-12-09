@@ -1,22 +1,25 @@
 package services
 
 import (
-	"log"
 	"time"
 
 	"bekend/database"
 	"bekend/models"
+	"bekend/utils"
 
 	"github.com/robfig/cron/v3"
+	"go.uber.org/zap"
 )
 
 type CronService struct {
 	emailService *EmailService
+	logger       *zap.Logger
 }
 
 func NewCronService() *CronService {
 	return &CronService{
 		emailService: NewEmailService(),
+		logger:       utils.GetLogger(),
 	}
 }
 
@@ -27,7 +30,7 @@ func (cs *CronService) Start() {
 	c.AddFunc("@daily", cs.SendEventReminders)
 
 	c.Start()
-	log.Println("Cron jobs started")
+	cs.logger.Info("Cron jobs started")
 }
 
 func (cs *CronService) UpdateEventStatuses() {
@@ -35,14 +38,17 @@ func (cs *CronService) UpdateEventStatuses() {
 
 	var events []models.Event
 	if err := database.DB.Where("status = ? AND end_date < ?", models.EventStatusActive, now).Find(&events).Error; err != nil {
-		log.Printf("Error updating event statuses: %v", err)
+		cs.logger.Error("Ошибка обновления статусов событий", zap.Error(err))
 		return
 	}
 
 	for _, event := range events {
 		event.Status = models.EventStatusPast
 		if err := database.DB.Save(&event).Error; err != nil {
-			log.Printf("Error updating event %s: %v", event.ID, err)
+			cs.logger.Error("Ошибка обновления статуса события",
+				zap.String("eventID", event.ID.String()),
+				zap.Error(err),
+			)
 		}
 	}
 
@@ -56,7 +62,7 @@ func (cs *CronService) UpdateEventStatuses() {
 		}
 	}
 
-	log.Printf("Updated %d event statuses", len(events))
+	cs.logger.Info("Обновлены статусы событий", zap.Int("count", len(events)))
 }
 
 func (cs *CronService) SendEventReminders() {
@@ -65,7 +71,7 @@ func (cs *CronService) SendEventReminders() {
 
 	var events []models.Event
 	if err := database.DB.Preload("Participants.User").Where("status = ? AND start_date BETWEEN ? AND ?", models.EventStatusActive, now, reminderTime).Find(&events).Error; err != nil {
-		log.Printf("Error finding events for reminders: %v", err)
+		cs.logger.Error("Ошибка поиска событий для напоминаний", zap.Error(err))
 		return
 	}
 
@@ -76,11 +82,15 @@ func (cs *CronService) SendEventReminders() {
 				event.Title,
 				"Напоминание: событие начнется через 24 часа",
 			); err != nil {
-				log.Printf("Error sending reminder to %s: %v", participant.User.Email, err)
+				cs.logger.Error("Ошибка отправки напоминания",
+					zap.String("email", participant.User.Email),
+					zap.String("eventID", event.ID.String()),
+					zap.Error(err),
+				)
 			}
 		}
 	}
 
-	log.Printf("Sent reminders for %d events", len(events))
+	cs.logger.Info("Отправлены напоминания о событиях", zap.Int("count", len(events)))
 }
 
