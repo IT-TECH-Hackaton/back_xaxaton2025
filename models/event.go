@@ -29,6 +29,11 @@ type Event struct {
 	OrganizerID     uuid.UUID `gorm:"type:uuid;not null" json:"organizerID"`
 	Organizer       User      `gorm:"foreignKey:OrganizerID" json:"organizer"`
 	Participants    []EventParticipant `gorm:"foreignKey:EventID" json:"participants"`
+	// Место проведения
+	Address         string    `gorm:"type:text" json:"address"` // Адрес места проведения
+	Latitude        *float64  `gorm:"type:decimal(10,8)" json:"latitude"` // Широта
+	Longitude       *float64  `gorm:"type:decimal(11,8)" json:"longitude"` // Долгота
+	YandexMapLink   string    `gorm:"type:text" json:"yandexMapLink"` // Ссылка на Яндекс.Карты
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
