@@ -52,7 +52,7 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 	offset := (pageInt - 1) * limitInt
 
 	var events []models.Event
-	query := database.DB.Preload("Organizer").Preload("Participants")
+	query := database.DB.Preload("Organizer").Preload("Participants").Preload("Categories")
 
 	switch tab {
 	case "active":
@@ -90,6 +90,14 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 
 	result := make([]dto.EventResponse, len(events))
 	for i, event := range events {
+		categories := make([]dto.CategoryInfo, len(event.Categories))
+		for j, cat := range event.Categories {
+			categories[j] = dto.CategoryInfo{
+				ID:   cat.ID.String(),
+				Name: cat.Name,
+			}
+		}
+		
 		result[i] = dto.EventResponse{
 			ID:               event.ID.String(),
 			Title:            event.Title,
@@ -102,6 +110,8 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 			MaxParticipants:  event.MaxParticipants,
 			Status:           string(event.Status),
 			ParticipantsCount: event.GetParticipantsCount(),
+			Categories:       categories,
+			Tags:             event.Tags,
 			Address:          event.Address,
 			Latitude:         event.Latitude,
 			Longitude:        event.Longitude,
@@ -137,7 +147,7 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 	userID, _ := c.Get("userID")
 
 	var event models.Event
-	if err := database.DB.Preload("Organizer").Preload("Participants.User").Where("id = ?", eventID).First(&event).Error; err != nil {
+	if err := database.DB.Preload("Organizer").Preload("Participants.User").Preload("Categories").Where("id = ?", eventID).First(&event).Error; err != nil {
 		h.logger.Error("Событие не найдено", zap.String("eventID", eventID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Событие не найдено"})
 		return
@@ -170,6 +180,14 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 		}
 	}
 
+	categories := make([]dto.CategoryInfo, len(event.Categories))
+	for i, cat := range event.Categories {
+		categories[i] = dto.CategoryInfo{
+			ID:   cat.ID.String(),
+			Name: cat.Name,
+		}
+	}
+
 	c.JSON(http.StatusOK, dto.EventDetailResponse{
 		ID:               event.ID.String(),
 		Title:            event.Title,
@@ -185,6 +203,8 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 		IsParticipant:    isParticipant,
 		AverageRating:    avgRating,
 		TotalReviews:     totalReviews,
+		Categories:       categories,
+		Tags:             event.Tags,
 		Address:          event.Address,
 		Latitude:         event.Latitude,
 		Longitude:        event.Longitude,
@@ -270,6 +290,7 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 		MaxParticipants:  req.MaxParticipants,
 		Status:           models.EventStatusActive,
 		OrganizerID:      organizerID,
+		Tags:             req.Tags,
 		Address:          req.Address,
 		Latitude:         req.Latitude,
 		Longitude:        req.Longitude,
@@ -280,6 +301,17 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 		h.logger.Error("Ошибка при создании события в БД", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании события"})
 		return
+	}
+
+	if len(req.CategoryIDs) > 0 {
+		var categories []models.Category
+		if err := database.DB.Where("id IN (?)", req.CategoryIDs).Find(&categories).Error; err == nil {
+			if err := database.DB.Model(&event).Association("Categories").Append(categories); err != nil {
+				h.logger.Error("Ошибка добавления категорий к событию", zap.String("eventID", event.ID.String()), zap.Error(err))
+			}
+		} else {
+			h.logger.Error("Ошибка получения категорий для события", zap.Error(err))
+		}
 	}
 
 	communityService := services.NewCommunityService()
@@ -420,10 +452,25 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 		event.YandexMapLink = req.YandexMapLink
 	}
 
+	if req.Tags != nil {
+		event.Tags = req.Tags
+	}
+
 	if err := database.DB.Save(&event).Error; err != nil {
 		h.logger.Error("Ошибка при обновлении события в БД", zap.String("eventID", eventID), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при обновлении события"})
 		return
+	}
+
+	if req.CategoryIDs != nil {
+		var categories []models.Category
+		if err := database.DB.Where("id IN (?)", req.CategoryIDs).Find(&categories).Error; err == nil {
+			if err := database.DB.Model(&event).Association("Categories").Replace(categories); err != nil {
+				h.logger.Error("Ошибка обновления категорий события", zap.String("eventID", eventID), zap.Error(err))
+			}
+		} else {
+			h.logger.Error("Ошибка получения категорий для обновления", zap.Error(err))
+		}
 	}
 
 	var participants []models.EventParticipant

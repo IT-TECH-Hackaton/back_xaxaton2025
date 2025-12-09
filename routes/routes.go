@@ -141,11 +141,26 @@ func SetupRoutes() *gin.Engine {
 				adminUsers.DELETE("/:id", adminHandler.DeleteUser)
 			}
 
-			adminEvents := admin.Group("/events")
-			{
-				adminEvents.GET("", adminHandler.GetAdminEvents)
-			}
+		adminEvents := admin.Group("/events")
+		{
+			adminEvents.GET("", adminHandler.GetAdminEvents)
 		}
+
+		categoryHandler := handlers.NewCategoryHandler()
+		adminCategories := admin.Group("/categories")
+		{
+			adminCategories.GET("", categoryHandler.GetCategories)
+			adminCategories.POST("", categoryHandler.CreateCategory)
+			adminCategories.PUT("/:id", categoryHandler.UpdateCategory)
+			adminCategories.DELETE("/:id", categoryHandler.DeleteCategory)
+		}
+	}
+
+	categoryHandler := handlers.NewCategoryHandler()
+	categories := api.Group("/categories")
+	{
+		categories.GET("", categoryHandler.GetCategories)
+	}
 	}
 
 	return r

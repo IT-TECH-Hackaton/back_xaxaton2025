@@ -18,6 +18,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&MicroCommunity{},
 		&CommunityMember{},
 		&CommunityInterest{},
+		&Category{},
+		&EventCategory{},
 	)
 }
 

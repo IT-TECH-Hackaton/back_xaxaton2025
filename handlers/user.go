@@ -1,19 +1,33 @@
 package handlers
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"bekend/database"
+	"bekend/dto"
 	"bekend/models"
 	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
-type UserHandler struct{}
+type UserHandler struct {
+	logger *zap.Logger
+}
 
 func NewUserHandler() *UserHandler {
-	return &UserHandler{}
+	return &UserHandler{
+		logger: utils.GetLogger(),
+	}
 }
 
 func (h *UserHandler) GetProfile(c *gin.Context) {
@@ -25,8 +39,17 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 
 	var user models.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+		h.logger.Error("Пользователь не найден", zap.Any("userID", userID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
 		return
+	}
+
+	var userInterests []models.UserInterest
+	database.DB.Preload("Interest").Where("user_id = ?", userID).Find(&userInterests)
+	
+	tags := make([]string, 0, len(userInterests))
+	for _, ui := range userInterests {
+		tags = append(tags, ui.Interest.Name)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -35,10 +58,12 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 		"secondName": "",
 		"mail":       user.Email,
 		"phone":      "",
-		"tag":        "",
+		"tags":       tags,
 		"birthDate":  "",
-		"image":      nil,
+		"image":      user.AvatarURL,
+		"telegram":   user.Telegram,
 		"role":       string(user.Role),
+		"fullName":   user.FullName,
 	})
 }
 
@@ -49,38 +74,232 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		FullName string `json:"fullName"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
-		return
-	}
-
 	var user models.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+		h.logger.Error("Пользователь не найден для обновления", zap.Any("userID", userID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
 		return
 	}
 
-	if req.FullName != "" {
-		if !utils.ValidateFullName(req.FullName) {
+	updated := false
+
+	fullName := c.PostForm("fullName")
+	if fullName != "" {
+		if !utils.ValidateFullName(fullName) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "ФИО должно содержать только русские буквы"})
 			return
 		}
-		if !utils.ValidateStringLength(req.FullName, 2, 100) {
+		if !utils.ValidateStringLength(fullName, utils.MinFullNameLength, utils.MaxFullNameLength) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "ФИО должно быть от 2 до 100 символов"})
 			return
 		}
-		user.FullName = req.FullName
+		user.FullName = fullName
+		updated = true
+	}
+
+	telegram := c.PostForm("telegram")
+	if telegram != "" {
+		telegramValue := telegram
+		if len(telegramValue) > 0 && telegramValue[0] == '@' {
+			telegramValue = telegramValue[1:]
+		}
+		if !utils.ValidateStringLength(telegramValue, 5, 32) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Telegram username должен быть от 5 до 32 символов"})
+			return
+		}
+		if !utils.ValidateTelegramUsername(telegramValue) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат Telegram username. Используйте только латинские буквы, цифры и подчеркивания"})
+			return
+		}
+		user.Telegram = telegramValue
+		updated = true
+	}
+
+	fileHeader, err := c.FormFile("avatar")
+	if err == nil {
+		if fileHeader.Size > 10*1024*1024 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Размер файла не должен превышать 10MB"})
+			return
+		}
+
+		if fileHeader.Size == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Файл пустой"})
+			return
+		}
+
+		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+		allowedExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp"}
+		allowed := false
+		for _, e := range allowedExts {
+			if ext == e {
+				allowed = true
+				break
+			}
+		}
+
+		if !allowed {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Недопустимый формат файла. Разрешены: jpg, jpeg, png, gif, webp"})
+			return
+		}
+
+		src, err := fileHeader.Open()
+		if err != nil {
+			h.logger.Error("Ошибка открытия файла аватарки", zap.Error(err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка при открытии файла"})
+			return
+		}
+		defer src.Close()
+
+		buffer := make([]byte, 512)
+		if _, err := src.Read(buffer); err != nil && err != io.EOF {
+			h.logger.Error("Ошибка чтения файла аватарки", zap.Error(err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка при чтении файла"})
+			return
+		}
+
+		mimeType := http.DetectContentType(buffer)
+		if !h.isValidImageFile(buffer, mimeType, ext) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Недопустимый тип файла. Файл должен быть изображением (JPEG, PNG, GIF, WebP)"})
+			return
+		}
+
+		if _, err := src.Seek(0, io.SeekStart); err != nil {
+			h.logger.Error("Ошибка сброса указателя файла", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при чтении файла"})
+			return
+		}
+
+		uploadDir := "uploads/avatars"
+		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+			h.logger.Error("Ошибка создания директории для аватарок", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании директории"})
+			return
+		}
+
+		if user.AvatarURL != "" && strings.HasPrefix(user.AvatarURL, "/uploads/avatars/") {
+			oldPath := strings.TrimPrefix(user.AvatarURL, "/")
+			if _, err := os.Stat(oldPath); err == nil {
+				if err := os.Remove(oldPath); err != nil {
+					h.logger.Warn("Не удалось удалить старый файл аватарки", zap.String("path", oldPath), zap.Error(err))
+				}
+			}
+		}
+
+		filename := fmt.Sprintf("%s_%d%s", uuid.New().String(), time.Now().Unix(), ext)
+		filePath := filepath.Join(uploadDir, filename)
+
+		dst, err := os.Create(filePath)
+		if err != nil {
+			h.logger.Error("Ошибка создания файла аватарки", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании файла"})
+			return
+		}
+		defer dst.Close()
+
+		if _, err := io.Copy(dst, src); err != nil {
+			h.logger.Error("Ошибка сохранения файла аватарки", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при сохранении файла"})
+			return
+		}
+
+		user.AvatarURL = fmt.Sprintf("/uploads/avatars/%s", filename)
+		updated = true
+	}
+
+	if !updated {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Не указаны поля для обновления"})
+		return
 	}
 
 	if err := database.DB.Save(&user).Error; err != nil {
+		h.logger.Error("Ошибка сохранения профиля", zap.Any("userID", userID), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при обновлении профиля"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Профиль обновлен"})
+	var userInterests []models.UserInterest
+	database.DB.Preload("Interest").Where("user_id = ?", userID).Find(&userInterests)
+	
+	tags := make([]string, 0, len(userInterests))
+	for _, ui := range userInterests {
+		tags = append(tags, ui.Interest.Name)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Профиль обновлен",
+		"user": gin.H{
+			"uid":        user.ID.String(),
+			"firstName":  "",
+			"secondName": "",
+			"mail":       user.Email,
+			"phone":      "",
+			"tags":       tags,
+			"birthDate":  "",
+			"image":      user.AvatarURL,
+			"telegram":   user.Telegram,
+			"role":       string(user.Role),
+			"fullName":   user.FullName,
+		},
+	})
 }
 
+func (h *UserHandler) isValidImageFile(buffer []byte, mimeType string, ext string) bool {
+	allowedMimeTypes := []string{
+		"image/jpeg",
+		"image/png",
+		"image/gif",
+		"image/webp",
+	}
+
+	mimeAllowed := false
+	for _, mime := range allowedMimeTypes {
+		if strings.HasPrefix(mimeType, mime) {
+			mimeAllowed = true
+			break
+		}
+	}
+
+	if !mimeAllowed {
+		return false
+	}
+
+	extLower := strings.ToLower(ext)
+	allowedExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp"}
+	extAllowed := false
+	for _, e := range allowedExts {
+		if extLower == e {
+			extAllowed = true
+			break
+		}
+	}
+
+	if !extAllowed {
+		return false
+	}
+
+	if len(buffer) < 4 {
+		return false
+	}
+
+	jpegMagic := []byte{0xFF, 0xD8, 0xFF}
+	pngMagic := []byte{0x89, 0x50, 0x4E, 0x47}
+	gifMagic := []byte{0x47, 0x49, 0x46, 0x38}
+	webpMagic := []byte{0x52, 0x49, 0x46, 0x46}
+
+	if bytes.HasPrefix(buffer, jpegMagic) {
+		return extLower == ".jpg" || extLower == ".jpeg"
+	}
+	if bytes.HasPrefix(buffer, pngMagic) {
+		return extLower == ".png"
+	}
+	if bytes.HasPrefix(buffer, gifMagic) {
+		return extLower == ".gif"
+	}
+	if bytes.HasPrefix(buffer, webpMagic) && len(buffer) >= 12 {
+		if bytes.Equal(buffer[8:12], []byte{0x57, 0x45, 0x42, 0x50}) {
+			return extLower == ".webp"
+		}
+	}
+
+	return false
+}

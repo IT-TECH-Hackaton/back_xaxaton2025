@@ -72,3 +72,20 @@ func ValidateEventStatus(status string) bool {
 	return status == "Активное" || status == "Прошедшее" || status == "Отклоненное"
 }
 
+func ValidateTelegramUsername(username string) bool {
+	if username == "" {
+		return true
+	}
+	telegramRegex := regexp.MustCompile(`^[a-zA-Z0-9_]{5,32}$`)
+	return telegramRegex.MatchString(username)
+}
+
+func ValidateURL(url string) bool {
+	if url == "" {
+		return true
+	}
+	urlRegex := regexp.MustCompile(`^https?://[^\s/$.?#].[^\s]*$`)
+	localPathRegex := regexp.MustCompile(`^/uploads/[^\s]*$`)
+	return urlRegex.MatchString(url) || localPathRegex.MatchString(url)
+}
+

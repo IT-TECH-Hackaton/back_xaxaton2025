@@ -27,6 +27,8 @@ type User struct {
 	Email     string    `gorm:"uniqueIndex;not null" json:"email"`
 	Password  string    `gorm:"" json:"-"` // Может быть пустым для OAuth пользователей
 	YandexID  string    `gorm:"uniqueIndex" json:"-"` // ID пользователя в Яндекс
+	Telegram  string    `gorm:"type:varchar(100)" json:"telegram"` // Telegram username
+	AvatarURL string    `gorm:"type:text" json:"avatarURL"` // URL аватарки пользователя
 	Role      UserRole  `gorm:"type:varchar(50);default:'Пользователь'" json:"role"`
 	Status    UserStatus `gorm:"type:varchar(50);default:'Активен'" json:"status"`
 	EmailVerified bool   `gorm:"default:false" json:"emailVerified"`

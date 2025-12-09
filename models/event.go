@@ -29,6 +29,8 @@ type Event struct {
 	OrganizerID     uuid.UUID `gorm:"type:uuid;not null" json:"organizerID"`
 	Organizer       User      `gorm:"foreignKey:OrganizerID" json:"organizer"`
 	Participants    []EventParticipant `gorm:"foreignKey:EventID" json:"participants"`
+	Categories      []Category `gorm:"many2many:event_categories;" json:"categories"` // Категории события
+	Tags            []string  `gorm:"type:text[]" json:"tags"` // Теги события (массив строк)
 	// Место проведения
 	Address         string    `gorm:"type:text" json:"address"` // Адрес места проведения
 	Latitude        *float64  `gorm:"type:decimal(10,8)" json:"latitude"` // Широта
@@ -37,6 +39,12 @@ type Event struct {
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+type EventCategory struct {
+	EventID    uuid.UUID `gorm:"type:uuid;primary_key" json:"eventID"`
+	CategoryID uuid.UUID `gorm:"type:uuid;primary_key" json:"categoryID"`
+	CreatedAt  time.Time `json:"createdAt"`
 }
 
 func (e *Event) BeforeCreate(tx *gorm.DB) error {

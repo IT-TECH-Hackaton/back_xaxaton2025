@@ -16,6 +16,8 @@ type CreateEventRequest struct {
 	PaymentInfo     string     `json:"paymentInfo"`
 	MaxParticipants *int       `json:"maxParticipants"`
 	ParticipantIDs  []uuid.UUID `json:"participantIDs"`
+	CategoryIDs     []uuid.UUID `json:"categoryIDs"` // Категории события
+	Tags            []string   `json:"tags"` // Теги события (массив строк)
 	Address         string     `json:"address"`
 	Latitude        *float64   `json:"latitude"`
 	Longitude       *float64   `json:"longitude"`
@@ -32,51 +34,74 @@ type UpdateEventRequest struct {
 	PaymentInfo     string    `json:"paymentInfo"`
 	MaxParticipants *int      `json:"maxParticipants"`
 	Status          string    `json:"status"`
+	CategoryIDs     []uuid.UUID `json:"categoryIDs"` // Категории события
+	Tags            []string  `json:"tags"` // Теги события (массив строк)
 	Address         string    `json:"address"`
 	Latitude        *float64  `json:"latitude"`
 	Longitude       *float64  `json:"longitude"`
 	YandexMapLink   string    `json:"yandexMapLink"`
 }
 
+type CategoryInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type PaginationResponse struct {
+	Data       interface{} `json:"data"`
+	Pagination Pagination  `json:"pagination"`
+}
+
+type Pagination struct {
+	Page       int   `json:"page"`
+	Limit      int   `json:"limit"`
+	Total      int64 `json:"total"`
+	TotalPages int   `json:"totalPages"`
+}
+
 type EventResponse struct {
-	ID               string    `json:"id"`
-	Title            string    `json:"title"`
-	ShortDescription string    `json:"shortDescription"`
-	FullDescription  string    `json:"fullDescription"`
-	StartDate        time.Time `json:"startDate"`
-	EndDate          time.Time `json:"endDate"`
-	ImageURL         string    `json:"imageURL"`
-	PaymentInfo      string    `json:"paymentInfo"`
-	MaxParticipants  *int      `json:"maxParticipants"`
-	Status           string    `json:"status"`
-	ParticipantsCount int      `json:"participantsCount"`
-	Address          string    `json:"address"`
-	Latitude         *float64  `json:"latitude"`
-	Longitude        *float64  `json:"longitude"`
-	YandexMapLink    string    `json:"yandexMapLink"`
-	Organizer        UserInfo  `json:"organizer"`
+	ID               string       `json:"id"`
+	Title            string       `json:"title"`
+	ShortDescription string       `json:"shortDescription"`
+	FullDescription  string       `json:"fullDescription"`
+	StartDate        time.Time    `json:"startDate"`
+	EndDate          time.Time    `json:"endDate"`
+	ImageURL         string       `json:"imageURL"`
+	PaymentInfo      string       `json:"paymentInfo"`
+	MaxParticipants  *int         `json:"maxParticipants"`
+	Status           string       `json:"status"`
+	ParticipantsCount int         `json:"participantsCount"`
+	Categories       []CategoryInfo `json:"categories"` // Категории события
+	Tags             []string     `json:"tags"` // Теги события
+	Address          string       `json:"address"`
+	Latitude         *float64     `json:"latitude"`
+	Longitude        *float64     `json:"longitude"`
+	YandexMapLink    string       `json:"yandexMapLink"`
+	Organizer        UserInfo     `json:"organizer"`
 }
 
 type EventDetailResponse struct {
-	ID               string    `json:"id"`
-	Title            string    `json:"title"`
-	ShortDescription string    `json:"shortDescription"`
-	FullDescription  string    `json:"fullDescription"`
-	StartDate        time.Time `json:"startDate"`
-	EndDate          time.Time `json:"endDate"`
-	ImageURL         string    `json:"imageURL"`
-	PaymentInfo      string    `json:"paymentInfo"`
-	MaxParticipants  *int      `json:"maxParticipants"`
-	Status           string    `json:"status"`
-	ParticipantsCount int      `json:"participantsCount"`
-	IsParticipant    bool      `json:"isParticipant"`
-	AverageRating    float64   `json:"averageRating"`
-	TotalReviews     int       `json:"totalReviews"`
-	Address          string    `json:"address"`
-	Latitude         *float64  `json:"latitude"`
-	Longitude        *float64  `json:"longitude"`
-	YandexMapLink    string    `json:"yandexMapLink"`
-	Organizer        UserInfo  `json:"organizer"`
+	ID               string         `json:"id"`
+	Title            string         `json:"title"`
+	ShortDescription string         `json:"shortDescription"`
+	FullDescription  string         `json:"fullDescription"`
+	StartDate        time.Time      `json:"startDate"`
+	EndDate          time.Time      `json:"endDate"`
+	ImageURL         string         `json:"imageURL"`
+	PaymentInfo      string         `json:"paymentInfo"`
+	MaxParticipants  *int           `json:"maxParticipants"`
+	Status           string         `json:"status"`
+	ParticipantsCount int           `json:"participantsCount"`
+	IsParticipant    bool           `json:"isParticipant"`
+	AverageRating    float64        `json:"averageRating"`
+	TotalReviews     int            `json:"totalReviews"`
+	Categories       []CategoryInfo  `json:"categories"` // Категории события
+	Tags             []string       `json:"tags"` // Теги события
+	Address          string         `json:"address"`
+	Latitude         *float64       `json:"latitude"`
+	Longitude        *float64       `json:"longitude"`
+	YandexMapLink    string         `json:"yandexMapLink"`
+	Organizer        UserInfo       `json:"organizer"`
 }
 
 type PaginationResponse struct {
