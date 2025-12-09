@@ -1,0 +1,33 @@
+═══════════════════════════════════════════════════════════════
+    ИСПРАВЛЕНИЕ ПРОБЛЕМЫ С AUDIO-SERVICE
+═══════════════════════════════════════════════════════════════
+
+ПРОБЛЕМА: Контейнер audio-service падает (Exited 1)
+
+РЕШЕНИЕ:
+
+1. Посмотрите логи audio-service:
+
+   docker logs golos-audio-service-1
+
+   Или через docker-compose:
+
+   docker-compose logs audio-service
+
+2. Перезапустите audio-service:
+
+   docker-compose restart audio-service
+
+   Или пересоберите и перезапустите:
+
+   docker-compose up -d --build audio-service
+
+3. Проверьте, что audio-service запущен:
+
+   docker-compose ps
+
+4. Если проблема сохраняется, проверьте доступность:
+
+   docker-compose exec api ping audio-service
+
+═══════════════════════════════════════════════════════════════

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Голосовой помощник</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Голосовой помощник</h1>
+        
+        <div class="controls">
+            <button id="recordBtn" class="btn btn-record">
+                <span class="icon">🎤</span>
+                Начать запись
+            </button>
+            <button id="stopBtn" class="btn btn-stop" disabled>
+                <span class="icon">⏹</span>
+                Остановить
+            </button>
+            <button id="clearBtn" class="btn btn-clear">
+                <span class="icon">🗑</span>
+                Очистить
+            </button>
+        </div>
+
+        <div class="status" id="status"></div>
+
+        <div class="messages">
+            <div class="message-section">
+                <h3>Ваш вопрос:</h3>
+                <div id="userMessage" class="message-box"></div>
+            </div>
+            <div class="message-section">
+                <h3>Ответ помощника:</h3>
+                <div id="assistantMessage" class="message-box"></div>
+            </div>
+        </div>
+
+        <audio id="audioPlayer" controls style="display: none; width: 100%; margin-top: 20px;"></audio>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

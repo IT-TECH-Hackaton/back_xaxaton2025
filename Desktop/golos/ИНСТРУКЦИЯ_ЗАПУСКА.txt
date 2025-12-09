@@ -1,0 +1,166 @@
+═══════════════════════════════════════════════════════════════
+    ИНСТРУКЦИЯ ПО ЗАПУСКУ ПРОЕКТА GOLOS
+═══════════════════════════════════════════════════════════════
+
+1. ОСТАНОВКА ВСЕХ DOCKER ПРОЦЕССОВ
+───────────────────────────────────────────────────────────────
+   Выполните команды в PowerShell:
+
+   docker ps -q | ForEach-Object { docker stop $_ }
+   docker-compose down
+
+   Или одной командой:
+   docker-compose down
+
+
+2. ЗАПУСК ПРОЕКТА ЧЕРЕЗ DOCKER COMPOSE (РЕКОМЕНДУЕТСЯ)
+───────────────────────────────────────────────────────────────
+   
+   Шаг 1: Убедитесь, что файл .env существует в корне проекта
+          с необходимыми переменными окружения:
+          
+          GIGACHAT_CLIENT_ID=ваш_client_id
+          GIGACHAT_CLIENT_SECRET=ваш_client_secret
+          GIGACHAT_AUTHORIZATION_KEY=ваш_authorization_key
+
+   Шаг 2: Запустите команду:
+   
+          docker-compose up -d --build
+          
+          Флаг -d запускает контейнеры в фоновом режиме
+          Флаг --build пересобирает образы при необходимости
+
+   Шаг 3: Проверьте статус контейнеров:
+   
+          docker-compose ps
+
+   Шаг 4: Просмотр логов:
+   
+          docker-compose logs -f
+          Или для конкретного сервиса:
+          docker-compose logs -f api
+          docker-compose logs -f audio-service
+
+
+3. ЗАПУСК ПРОЕКТА ЛОКАЛЬНО (БЕЗ DOCKER)
+───────────────────────────────────────────────────────────────
+
+   Вариант А: Использование PowerShell скрипта run-all.ps1
+   
+              .\run-all.ps1
+              
+              Этот скрипт:
+              - Устанавливает переменные окружения
+              - Запускает Audio Service в отдельном окне
+              - Запускает Go API сервер
+
+   Вариант Б: Ручной запуск
+
+      3.1. Запуск Audio Service (FastAPI):
+           
+           cd audio-service
+           python -m uvicorn app.main:app --reload --port 8000
+           
+           Или если используется виртуальное окружение:
+           .\venv\Scripts\Activate.ps1
+           python -m uvicorn app.main:app --reload --port 8000
+
+      3.2. В отдельном терминале запуск Go API:
+           
+           $env:GIGACHAT_CLIENT_ID='019a81d2-9f7c-7429-a7eb-f240038d4d22'
+           $env:GIGACHAT_AUTHORIZATION_KEY='MDE5YTgxZDItOWY3Yy03NDI5LWE3ZWItZjI0MDAzOGQ0ZDIyOjkwMjMwZGZhLTdmYmEtNGRkNi05Zjg1LThkNjAzMjc3YjVmYw=='
+           $env:GIGACHAT_SCOPE='GIGACHAT_API_PERS'
+           $env:API_PORT='8080'
+           $env:API_HOST='0.0.0.0'
+           $env:AUDIO_SERVICE_URL='http://localhost:8000'
+           
+           go run cmd/api/main.go
+
+
+4. ДОСТУП К СЕРВИСАМ
+───────────────────────────────────────────────────────────────
+   
+   После запуска проект будет доступен по следующим адресам:
+   
+   - Веб-интерфейс:        http://localhost:8080
+   - Go API сервер:        http://localhost:8080
+   - Health check:         http://localhost:8080/api/v1/health
+   - Metrics:              http://localhost:8080/api/v1/metrics
+   - Audio Service:        http://localhost:8000
+   - Audio Service Health: http://localhost:8000/health
+
+
+5. ОСТАНОВКА ПРОЕКТА
+───────────────────────────────────────────────────────────────
+
+   Если запущено через Docker Compose:
+   
+   docker-compose down
+   
+   Остановить и удалить контейнеры с volumes:
+   
+   docker-compose down -v
+
+   Если запущено локально:
+   - Нажмите Ctrl+C в терминалах с запущенными сервисами
+   - Или закройте окна PowerShell
+
+
+6. ПЕРЕЗАПУСК ПРОЕКТА
+───────────────────────────────────────────────────────────────
+
+   docker-compose restart
+   
+   Или полная перезагрузка:
+   
+   docker-compose down
+   docker-compose up -d --build
+
+
+7. РЕШЕНИЕ ПРОБЛЕМ
+───────────────────────────────────────────────────────────────
+
+   7.1. Порт уже занят:
+        - Освободите порт 8080 или 8000
+        - Или измените порты в docker-compose.yml и конфигурации
+
+   7.2. Ошибки с переменными окружения:
+        - Проверьте наличие файла .env
+        - Убедитесь в корректности значений GIGACHAT_* переменных
+
+   7.3. Проблемы с Docker:
+        - Проверьте, что Docker Desktop запущен
+        - Выполните: docker system prune -a (осторожно: удалит все образы)
+
+   7.4. Ошибки сборки:
+        - Убедитесь, что все зависимости установлены
+        - Для Go: go mod download
+        - Для Python: pip install -r audio-service/requirements.txt
+
+
+8. КОМАНДЫ ДЛЯ БЫСТРОГО ДОСТУПА
+───────────────────────────────────────────────────────────────
+
+   # Остановить все Docker контейнеры
+   docker ps -q | ForEach-Object { docker stop $_ }
+   docker-compose down
+
+   # Запуск через Docker
+   docker-compose up -d --build
+
+   # Просмотр логов
+   docker-compose logs -f
+
+   # Остановка
+   docker-compose down
+
+   # Перезапуск
+   docker-compose restart
+
+
+═══════════════════════════════════════════════════════════════
+   Примечание: Для работы требуется интернет-соединение,
+   так как используется Google Speech Recognition API для STT
+   и GigaChat API для обработки естественного языка.
+═══════════════════════════════════════════════════════════════
+
