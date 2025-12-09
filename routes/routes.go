@@ -67,6 +67,16 @@ func SetupRoutes() *gin.Engine {
 			events.GET("/:id/export", middleware.AuthMiddleware(), eventHandler.ExportParticipants)
 		}
 
+		reviewHandler := handlers.NewReviewHandler()
+		reviews := api.Group("/events/:id/reviews")
+		reviews.Use(middleware.AuthMiddleware())
+		{
+			reviews.GET("", reviewHandler.GetEventReviews)
+			reviews.POST("", reviewHandler.CreateReview)
+			reviews.PUT("/:reviewId", reviewHandler.UpdateReview)
+			reviews.DELETE("/:reviewId", reviewHandler.DeleteReview)
+		}
+
 		admin := api.Group("/admin")
 		admin.Use(middleware.AuthMiddleware())
 		admin.Use(middleware.AdminMiddleware())

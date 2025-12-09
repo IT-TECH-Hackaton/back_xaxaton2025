@@ -135,6 +135,20 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 		}
 	}
 
+	var reviews []models.EventReview
+	var avgRating float64
+	var totalReviews int
+	if err := database.DB.Where("event_id = ?", eventID).Find(&reviews).Error; err == nil {
+		totalReviews = len(reviews)
+		if totalReviews > 0 {
+			var totalRating int
+			for _, r := range reviews {
+				totalRating += r.Rating
+			}
+			avgRating = float64(totalRating) / float64(totalReviews)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":              event.ID,
 		"title":           event.Title,
@@ -148,6 +162,8 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 		"status":          event.Status,
 		"participantsCount": event.GetParticipantsCount(),
 		"isParticipant":    isParticipant,
+		"averageRating":    avgRating,
+		"totalReviews":    totalReviews,
 		"organizer": gin.H{
 			"id":   event.Organizer.ID,
 			"name": event.Organizer.FullName,
@@ -362,10 +378,22 @@ func (h *EventHandler) LeaveEvent(c *gin.Context) {
 
 func (h *EventHandler) ExportParticipants(c *gin.Context) {
 	eventID := c.Param("id")
+	format := c.Query("format")
 
 	var participants []models.EventParticipant
 	if err := database.DB.Preload("User").Preload("Event").Where("event_id = ?", eventID).Find(&participants).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении участников"})
+		return
+	}
+
+	if format == "csv" {
+		c.Header("Content-Type", "text/csv; charset=utf-8")
+		c.Header("Content-Disposition", "attachment; filename=participants.csv")
+		c.Writer.WriteString("\xEF\xBB\xBF")
+		c.Writer.WriteString("ФИО,Email\n")
+		for _, p := range participants {
+			c.Writer.WriteString(fmt.Sprintf("%s,%s\n", p.User.FullName, p.User.Email))
+		}
 		return
 	}
 

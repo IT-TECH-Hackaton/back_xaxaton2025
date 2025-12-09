@@ -23,9 +23,10 @@ func NewAuthHandler() *AuthHandler {
 }
 
 type RegisterRequest struct {
-	FullName string `json:"fullName" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	FullName         string `json:"fullName" binding:"required"`
+	Email            string `json:"email" binding:"required,email"`
+	Password         string `json:"password" binding:"required"`
+	PasswordConfirm  string `json:"passwordConfirm" binding:"required"`
 }
 
 type LoginRequest struct {
@@ -66,6 +67,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	if !utils.ValidatePassword(req.Password) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Пароль должен содержать минимум 8 символов, латинские буквы, цифры и специальные символы"})
+		return
+	}
+
+	if req.Password != req.PasswordConfirm {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Пароли не совпадают"})
 		return
 	}
 

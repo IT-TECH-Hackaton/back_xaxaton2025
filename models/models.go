@@ -7,6 +7,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&User{},
 		&Event{},
 		&EventParticipant{},
+		&EventReview{},
 		&EmailVerification{},
 		&PasswordReset{},
 	)
