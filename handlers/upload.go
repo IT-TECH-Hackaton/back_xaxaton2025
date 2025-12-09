@@ -30,18 +30,63 @@ func (h *UploadHandler) UploadImage(c *gin.Context) {
 		return
 	}
 
+	if file.Size == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Файл пустой"})
+		return
+	}
+
 	ext := filepath.Ext(file.Filename)
 	allowedExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp"}
 	allowed := false
 	for _, e := range allowedExts {
-		if ext == e {
+		if strings.EqualFold(ext, e) {
 			allowed = true
 			break
 		}
 	}
 
 	if !allowed {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Недопустимый формат файла"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Недопустимый формат файла. Разрешены: jpg, jpeg, png, gif, webp"})
+		return
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка при открытии файла"})
+		return
+	}
+	defer src.Close()
+
+	buffer := make([]byte, 512)
+	if _, err := src.Read(buffer); err != nil && err != io.EOF {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка при чтении файла"})
+		return
+	}
+
+	mimeType := http.DetectContentType(buffer)
+	allowedMimeTypes := []string{
+		"image/jpeg",
+		"image/jpg",
+		"image/png",
+		"image/gif",
+		"image/webp",
+	}
+
+	mimeAllowed := false
+	for _, mime := range allowedMimeTypes {
+		if mimeType == mime {
+			mimeAllowed = true
+			break
+		}
+	}
+
+	if !mimeAllowed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Недопустимый тип файла. Файл должен быть изображением"})
+		return
+	}
+
+	if _, err := src.Seek(0, 0); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при чтении файла"})
 		return
 	}
 

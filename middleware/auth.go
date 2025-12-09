@@ -4,15 +4,21 @@ import (
 	"net/http"
 	"strings"
 
+	"bekend/logger"
 	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
+			logger.GetLogger().Warn("Попытка доступа без токена",
+				zap.String("ip", c.ClientIP()),
+				zap.String("path", c.Request.URL.Path),
+			)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
 			c.Abort()
 			return
@@ -20,6 +26,10 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
+			logger.GetLogger().Warn("Неверный формат токена",
+				zap.String("ip", c.ClientIP()),
+				zap.String("path", c.Request.URL.Path),
+			)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Неверный формат токена"})
 			c.Abort()
 			return
@@ -27,6 +37,11 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		claims, err := utils.ValidateToken(parts[1])
 		if err != nil {
+			logger.GetLogger().Warn("Недействительный токен",
+				zap.String("ip", c.ClientIP()),
+				zap.String("path", c.Request.URL.Path),
+				zap.Error(err),
+			)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Недействительный токен"})
 			c.Abort()
 			return

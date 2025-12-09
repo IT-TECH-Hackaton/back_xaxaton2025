@@ -25,28 +25,14 @@ func NewEventHandler() *EventHandler {
 	}
 }
 
-type CreateEventRequest struct {
-	Title           string    `json:"title" binding:"required"`
-	ShortDescription string   `json:"shortDescription"`
-	FullDescription string    `json:"fullDescription" binding:"required"`
-	StartDate       time.Time `json:"startDate" binding:"required"`
-	EndDate         time.Time `json:"endDate" binding:"required"`
-	ImageURL        string    `json:"imageURL" binding:"required"`
-	PaymentInfo     string    `json:"paymentInfo"`
-	MaxParticipants *int      `json:"maxParticipants"`
-	ParticipantIDs  []uuid.UUID `json:"participantIDs"`
+type EventHandler struct {
+	logger *zap.Logger
 }
 
-type UpdateEventRequest struct {
-	Title           string    `json:"title"`
-	ShortDescription string   `json:"shortDescription"`
-	FullDescription string    `json:"fullDescription"`
-	StartDate       time.Time `json:"startDate"`
-	EndDate         time.Time `json:"endDate"`
-	ImageURL        string    `json:"imageURL"`
-	PaymentInfo     string    `json:"paymentInfo"`
-	MaxParticipants *int      `json:"maxParticipants"`
-	Status          string    `json:"status"`
+func NewEventHandler() *EventHandler {
+	return &EventHandler{
+		logger: utils.GetLogger(),
+	}
 }
 
 func (h *EventHandler) GetEvents(c *gin.Context) {
@@ -55,6 +41,20 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 		userID = nil
 	}
 	tab := c.Query("tab")
+
+	page := c.DefaultQuery("page", "1")
+	limit := c.DefaultQuery("limit", "20")
+	pageInt := 1
+	limitInt := 20
+
+	if p, err := strconv.Atoi(page); err == nil && p > 0 {
+		pageInt = p
+	}
+	if l, err := strconv.Atoi(limit); err == nil && l > 0 && l <= 100 {
+		limitInt = l
+	}
+
+	offset := (pageInt - 1) * limitInt
 
 	var events []models.Event
 	query := database.DB.Preload("Organizer").Preload("Participants")
@@ -84,7 +84,10 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 
 	query = query.Where("status != ?", models.EventStatusRejected)
 
-	if err := query.Find(&events).Error; err != nil {
+	var total int64
+	query.Model(&models.Event{}).Count(&total)
+
+	if err := query.Offset(offset).Limit(limitInt).Order("created_at DESC").Find(&events).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении событий"})
 		return
 	}
@@ -103,6 +106,10 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 			"maxParticipants": event.MaxParticipants,
 			"status":          event.Status,
 			"participantsCount": event.GetParticipantsCount(),
+			"address":         event.Address,
+			"latitude":        event.Latitude,
+			"longitude":       event.Longitude,
+			"yandexMapLink":   event.YandexMapLink,
 			"organizer": gin.H{
 				"id":   event.Organizer.ID,
 				"name": event.Organizer.FullName,
@@ -110,7 +117,16 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, result)
+	totalPages := int((total + int64(limitInt) - 1) / int64(limitInt))
+	c.JSON(http.StatusOK, dto.PaginationResponse{
+		Data: result,
+		Pagination: dto.Pagination{
+			Page:       pageInt,
+			Limit:      limitInt,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	})
 }
 
 func (h *EventHandler) GetEvent(c *gin.Context) {
@@ -171,6 +187,10 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 		"isParticipant":    isParticipant,
 		"averageRating":    avgRating,
 		"totalReviews":    totalReviews,
+		"address":         event.Address,
+		"latitude":        event.Latitude,
+		"longitude":       event.Longitude,
+		"yandexMapLink":   event.YandexMapLink,
 		"organizer": gin.H{
 			"id":   event.Organizer.ID,
 			"name": event.Organizer.FullName,
@@ -179,7 +199,7 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 }
 
 func (h *EventHandler) CreateEvent(c *gin.Context) {
-	var req CreateEventRequest
+	var req dto.CreateEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
 		return
@@ -215,6 +235,28 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 		return
 	}
 
+	// Валидация координат
+	if req.Latitude != nil {
+		if *req.Latitude < -90 || *req.Latitude > 90 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Широта должна быть от -90 до 90"})
+			return
+		}
+	}
+	if req.Longitude != nil {
+		if *req.Longitude < -180 || *req.Longitude > 180 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Долгота должна быть от -180 до 180"})
+			return
+		}
+	}
+	if req.Address != "" && !utils.ValidateStringLength(req.Address, 0, 500) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Адрес должен быть до 500 символов"})
+		return
+	}
+	if req.YandexMapLink != "" && !utils.ValidateStringLength(req.YandexMapLink, 0, 1000) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Ссылка на карту должна быть до 1000 символов"})
+		return
+	}
+
 	userID, _ := c.Get("userID")
 	organizerID := userID.(uuid.UUID)
 
@@ -229,12 +271,19 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 		MaxParticipants:  req.MaxParticipants,
 		Status:           models.EventStatusActive,
 		OrganizerID:      organizerID,
+		Address:          req.Address,
+		Latitude:         req.Latitude,
+		Longitude:        req.Longitude,
+		YandexMapLink:    req.YandexMapLink,
 	}
 
 	if err := database.DB.Create(&event).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании события"})
 		return
 	}
+
+	communityService := services.NewCommunityService()
+	go communityService.NotifyCommunitiesAboutEvent(&event)
 
 	if len(req.ParticipantIDs) > 0 {
 		var users []models.User
@@ -335,6 +384,34 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 			return
 		}
 		event.Status = models.EventStatus(req.Status)
+	}
+	if req.Address != "" {
+		if !utils.ValidateStringLength(req.Address, 0, 500) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Адрес должен быть до 500 символов"})
+			return
+		}
+		event.Address = req.Address
+	}
+	if req.Latitude != nil {
+		if *req.Latitude < -90 || *req.Latitude > 90 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Широта должна быть от -90 до 90"})
+			return
+		}
+		event.Latitude = req.Latitude
+	}
+	if req.Longitude != nil {
+		if *req.Longitude < -180 || *req.Longitude > 180 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Долгота должна быть от -180 до 180"})
+			return
+		}
+		event.Longitude = req.Longitude
+	}
+	if req.YandexMapLink != "" {
+		if !utils.ValidateStringLength(req.YandexMapLink, 0, 1000) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ссылка на карту должна быть до 1000 символов"})
+			return
+		}
+		event.YandexMapLink = req.YandexMapLink
 	}
 
 	if err := database.DB.Save(&event).Error; err != nil {

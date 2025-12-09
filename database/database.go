@@ -2,14 +2,15 @@ package database
 
 import (
 	"fmt"
-	"log"
 
 	"bekend/config"
+	"bekend/logger"
 	"bekend/models"
 
+	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	gormLogger "gorm.io/gorm/logger"
 )
 
 var DB *gorm.DB
@@ -26,19 +27,19 @@ func Connect() {
 
 	var err error
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: gormLogger.Default.LogMode(gormLogger.Info),
 	})
 
 	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		logger.GetLogger().Fatal("Ошибка подключения к базе данных", zap.Error(err))
 	}
 
-	log.Println("Database connected successfully")
+	logger.GetLogger().Info("Подключение к базе данных установлено")
 
 	if err := models.AutoMigrate(DB); err != nil {
-		log.Fatal("Failed to migrate database:", err)
+		logger.GetLogger().Fatal("Ошибка миграции базы данных", zap.Error(err))
 	}
 
-	log.Println("Database migrated successfully")
+	logger.GetLogger().Info("Миграция базы данных выполнена успешно")
 }
 

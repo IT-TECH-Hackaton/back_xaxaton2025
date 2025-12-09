@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"time"
 
 	"bekend/config"
 	"gopkg.in/gomail.v2"
@@ -33,9 +34,18 @@ func (es *EmailService) SendEmail(to, subject, body string) error {
 	m.SetBody("text/html", body)
 
 	if err := es.dialer.DialAndSend(m); err != nil {
-		log.Printf("Failed to send email to %s: %v", to, err)
+		logger.GetLogger().Error("Ошибка отправки email",
+			zap.String("to", to),
+			zap.String("subject", subject),
+			zap.Error(err),
+		)
 		return err
 	}
+
+	logger.GetLogger().Info("Email отправлен",
+		zap.String("to", to),
+		zap.String("subject", subject),
+	)
 
 	return nil
 }
@@ -147,6 +157,61 @@ func (es *EmailService) SendPasswordResetLink(email, token string) error {
 	}
 
 	return es.SendEmail(email, "Восстановление пароля", bodyBuffer.String())
+}
+
+func (es *EmailService) SendLoginNotification(email, fullName, ipAddress string) error {
+	tmpl := `
+	<!DOCTYPE html>
+	<html>
+	<head>
+		<meta charset="UTF-8">
+		<style>
+			body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+			.container { max-width: 600px; margin: 0 auto; padding: 20px; }
+			.header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; }
+			.content { padding: 20px; background-color: #f9f9f9; }
+			.footer { text-align: center; padding: 20px; font-size: 12px; color: #666; }
+			.alert { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<div class="header">
+				<h1>Уведомление о входе</h1>
+			</div>
+			<div class="content">
+				<p>Здравствуйте, {{.FullName}}!</p>
+				<div class="alert">
+					<p><strong>В ваш аккаунт был выполнен вход.</strong></p>
+					<p>Время входа: {{.LoginTime}}</p>
+					{{if .IPAddress}}<p>IP-адрес: {{.IPAddress}}</p>{{end}}
+				</div>
+				<p>Если это были не вы, немедленно смените пароль и свяжитесь с поддержкой.</p>
+				<p>С уважением,<br>Команда поддержки</p>
+			</div>
+			<div class="footer">
+				<p>Это автоматическое уведомление. Пожалуйста, не отвечайте на это письмо.</p>
+			</div>
+		</div>
+	</body>
+	</html>
+	`
+
+	t := template.Must(template.New("loginNotification").Parse(tmpl))
+	var bodyBuffer bytes.Buffer
+	loginTime := time.Now().Format("02.01.2006 в 15:04")
+	
+	data := map[string]string{
+		"FullName":  fullName,
+		"LoginTime": loginTime,
+		"IPAddress": ipAddress,
+	}
+	
+	if err := t.Execute(&bodyBuffer, data); err != nil {
+		return err
+	}
+
+	return es.SendEmail(email, "Уведомление о входе в аккаунт", bodyBuffer.String())
 }
 
 func (es *EmailService) SendPasswordChangedNotification(email string) error {

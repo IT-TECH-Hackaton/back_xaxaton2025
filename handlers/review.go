@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"bekend/database"
 	"bekend/models"
@@ -105,8 +106,27 @@ func (h *ReviewHandler) GetEventReviews(c *gin.Context) {
 		return
 	}
 
+	page := c.DefaultQuery("page", "1")
+	limit := c.DefaultQuery("limit", "20")
+	pageInt := 1
+	limitInt := 20
+
+	if p, err := strconv.Atoi(page); err == nil && p > 0 {
+		pageInt = p
+	}
+	if l, err := strconv.Atoi(limit); err == nil && l > 0 && l <= 100 {
+		limitInt = l
+	}
+
+	offset := (pageInt - 1) * limitInt
+
 	var reviews []models.EventReview
-	if err := database.DB.Preload("User").Where("event_id = ?", eventID).Order("created_at DESC").Find(&reviews).Error; err != nil {
+	query := database.DB.Preload("User").Where("event_id = ?", eventID)
+
+	var total int64
+	query.Model(&models.EventReview{}).Count(&total)
+
+	if err := query.Offset(offset).Limit(limitInt).Order("created_at DESC").Find(&reviews).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении отзывов"})
 		return
 	}
@@ -128,14 +148,27 @@ func (h *ReviewHandler) GetEventReviews(c *gin.Context) {
 	}
 
 	var avgRating float64
-	if len(reviews) > 0 {
-		avgRating = float64(totalRating) / float64(len(reviews))
+	if total > 0 {
+		var allReviews []models.EventReview
+		database.DB.Where("event_id = ?", eventID).Find(&allReviews)
+		var allRating int
+		for _, r := range allReviews {
+			allRating += r.Rating
+		}
+		avgRating = float64(allRating) / float64(total)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"reviews": result,
-		"averageRating": avgRating,
-		"totalReviews": len(reviews),
+	totalPages := int((total + int64(limitInt) - 1) / int64(limitInt))
+	c.JSON(http.StatusOK, dto.ReviewsResponse{
+		Data:          result,
+		AverageRating: avgRating,
+		TotalReviews:  total,
+		Pagination: dto.Pagination{
+			Page:       pageInt,
+			Limit:      limitInt,
+			Total:      total,
+			TotalPages: totalPages,
+		},
 	})
 }
 

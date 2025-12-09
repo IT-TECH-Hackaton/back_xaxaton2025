@@ -33,12 +33,12 @@ func SetupRoutes() *gin.Engine {
 	{
 		auth := api.Group("/auth")
 		{
-			auth.POST("/register", authHandler.Register)
+			auth.POST("/register", middleware.RateLimitMiddleware("3-H"), authHandler.Register)
 			auth.POST("/verify-email", authHandler.VerifyEmail)
-			auth.POST("/resend-code", authHandler.ResendCode)
-			auth.POST("/login", authHandler.Login)
+			auth.POST("/resend-code", middleware.RateLimitMiddleware("3-H"), authHandler.ResendCode)
+			auth.POST("/login", middleware.RateLimitMiddleware("5-M"), authHandler.Login)
 			auth.POST("/logout", authHandler.Logout)
-			auth.POST("/forgot-password", authHandler.ForgotPassword)
+			auth.POST("/forgot-password", middleware.RateLimitMiddleware("3-H"), authHandler.ForgotPassword)
 			auth.POST("/reset-password", authHandler.ResetPassword)
 			auth.GET("/yandex", authHandler.YandexAuth)
 			auth.GET("/yandex/callback", authHandler.YandexCallback)
@@ -80,12 +80,58 @@ func SetupRoutes() *gin.Engine {
 			reviews.DELETE("/:reviewId", reviewHandler.DeleteReview)
 		}
 
+		geocoderHandler := handlers.NewGeocoderHandler()
+		geocoder := api.Group("/geocoder")
+		{
+			geocoder.POST("/geocode", geocoderHandler.GeocodeAddress)
+			geocoder.POST("/reverse", geocoderHandler.ReverseGeocode)
+			geocoder.POST("/map-link", geocoderHandler.GenerateMapLink)
+		}
+
+		interestHandler := handlers.NewInterestHandler()
+		interests := api.Group("/interests")
+		{
+			interests.GET("", interestHandler.GetInterests)
+			interests.GET("/categories", interestHandler.GetCategories)
+			interests.POST("", middleware.AuthMiddleware(), interestHandler.CreateInterest)
+			interests.GET("/my", middleware.AuthMiddleware(), interestHandler.GetUserInterests)
+			interests.POST("/my", middleware.AuthMiddleware(), interestHandler.AddUserInterest)
+			interests.DELETE("/my/:id", middleware.AuthMiddleware(), interestHandler.RemoveUserInterest)
+			interests.PUT("/my/:id/weight", middleware.AuthMiddleware(), interestHandler.UpdateUserInterestWeight)
+		}
+
+		matchingHandler := handlers.NewMatchingHandler()
+		matching := api.Group("/events/:id/matching")
+		matching.Use(middleware.AuthMiddleware())
+		{
+			matching.POST("", matchingHandler.CreateEventMatching)
+			matching.GET("", matchingHandler.GetMatches)
+			matching.DELETE("", matchingHandler.RemoveEventMatching)
+			matching.POST("/request", matchingHandler.CreateMatchRequest)
+			matching.GET("/requests", matchingHandler.GetMyMatchRequests)
+			matching.POST("/requests/:id/accept", matchingHandler.AcceptMatchRequest)
+			matching.POST("/requests/:id/reject", matchingHandler.RejectMatchRequest)
+		}
+
+		communityHandler := handlers.NewCommunityHandler()
+		communities := api.Group("/communities")
+		{
+			communities.GET("", communityHandler.GetCommunities)
+			communities.GET("/:id", communityHandler.GetCommunity)
+			communities.GET("/:id/members", communityHandler.GetCommunityMembers)
+			communities.POST("", middleware.AuthMiddleware(), communityHandler.CreateCommunity)
+			communities.POST("/:id/join", middleware.AuthMiddleware(), communityHandler.JoinCommunity)
+			communities.DELETE("/:id/leave", middleware.AuthMiddleware(), communityHandler.LeaveCommunity)
+			communities.GET("/my", middleware.AuthMiddleware(), communityHandler.GetMyCommunities)
+		}
+
 		admin := api.Group("/admin")
 		admin.Use(middleware.AuthMiddleware())
 		admin.Use(middleware.AdminMiddleware())
 		{
 			adminUsers := admin.Group("/users")
 			{
+				adminUsers.POST("", adminHandler.CreateUser)
 				adminUsers.GET("", adminHandler.GetUsers)
 				adminUsers.GET("/:id", adminHandler.GetUser)
 				adminUsers.PUT("/:id", adminHandler.UpdateUser)

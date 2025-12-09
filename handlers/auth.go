@@ -5,51 +5,29 @@ import (
 	"time"
 
 	"bekend/database"
+	"bekend/dto"
 	"bekend/models"
 	"bekend/services"
 	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type AuthHandler struct {
 	emailService *services.EmailService
+	logger       *zap.Logger
 }
 
 func NewAuthHandler() *AuthHandler {
 	return &AuthHandler{
 		emailService: services.NewEmailService(),
+		logger:       utils.GetLogger(),
 	}
 }
 
-type RegisterRequest struct {
-	FullName         string `json:"fullName" binding:"required"`
-	Email            string `json:"email" binding:"required,email"`
-	Password         string `json:"password" binding:"required"`
-	PasswordConfirm  string `json:"passwordConfirm" binding:"required"`
-}
-
-type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
-}
-
-type VerifyEmailRequest struct {
-	Email string `json:"email" binding:"required,email"`
-	Code  string `json:"code" binding:"required"`
-}
-
-type ForgotPasswordRequest struct {
-	Email string `json:"email" binding:"required,email"`
-}
-
-type ResetPasswordRequest struct {
-	Token    string `json:"token" binding:"required"`
-	Password string `json:"password" binding:"required"`
-}
-
 func (h *AuthHandler) Register(c *gin.Context) {
-	var req RegisterRequest
+	var req dto.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
 		return
@@ -136,7 +114,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 }
 
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
-	var req VerifyEmailRequest
+	var req dto.VerifyEmailRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
 		return
@@ -233,7 +211,7 @@ func (h *AuthHandler) ResendCode(c *gin.Context) {
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
-	var req LoginRequest
+	var req dto.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
 		return
@@ -267,6 +245,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	ipAddress := c.ClientIP()
+	go h.emailService.SendLoginNotification(user.Email, user.FullName, ipAddress)
+
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 		"user": gin.H{
@@ -282,7 +263,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 }
 
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
-	var req ForgotPasswordRequest
+	var req dto.ForgotPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
 		return
@@ -322,7 +303,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 }
 
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
-	var req ResetPasswordRequest
+	var req dto.ResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
 		return
