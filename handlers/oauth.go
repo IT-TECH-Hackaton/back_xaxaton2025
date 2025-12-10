@@ -123,11 +123,11 @@ func (h *AuthHandler) YandexCallback(c *gin.Context) {
 	err = database.DB.Where("yandex_id = ? OR email = ?", userInfo.ID, email).First(&user).Error
 
 	if err != nil {
-		// Пользователь не найден - создаем нового
+		yandexID := userInfo.ID
 		user = models.User{
 			FullName:      fullName,
 			Email:         email,
-			YandexID:      userInfo.ID,
+			YandexID:      &yandexID,
 			Password:      "", // Пароль не нужен для OAuth
 			Role:          models.RoleUser,
 			Status:        models.UserStatusActive,
@@ -143,9 +143,9 @@ func (h *AuthHandler) YandexCallback(c *gin.Context) {
 		// Отправляем приветственное письмо
 		go h.emailService.SendWelcomeEmail(user.Email, user.FullName)
 	} else {
-		// Пользователь найден - обновляем информацию
-		if user.YandexID == "" {
-			user.YandexID = userInfo.ID
+		yandexID := userInfo.ID
+		if user.YandexID == nil {
+			user.YandexID = &yandexID
 		}
 		if user.AuthProvider != "yandex" {
 			user.AuthProvider = "yandex"
@@ -288,11 +288,11 @@ func (h *AuthHandler) FakeYandexAuth(c *gin.Context) {
 	err := database.DB.Where("yandex_id = ? OR email = ?", req.YandexID, req.Email).First(&user).Error
 
 	if err != nil {
-		// Пользователь не найден - создаем нового
+		yandexID := req.YandexID
 		user = models.User{
 			FullName:      fullName,
 			Email:         req.Email,
-			YandexID:      req.YandexID,
+			YandexID:      &yandexID,
 			Password:      "", // Пароль не нужен для OAuth
 			Role:          models.RoleUser,
 			Status:        models.UserStatusActive,
@@ -308,9 +308,9 @@ func (h *AuthHandler) FakeYandexAuth(c *gin.Context) {
 		// Отправляем приветственное письмо
 		go h.emailService.SendWelcomeEmail(user.Email, user.FullName)
 	} else {
-		// Пользователь найден - обновляем информацию
-		if user.YandexID == "" {
-			user.YandexID = req.YandexID
+		yandexID := req.YandexID
+		if user.YandexID == nil {
+			user.YandexID = &yandexID
 		}
 		if user.AuthProvider != "yandex" {
 			user.AuthProvider = "yandex"

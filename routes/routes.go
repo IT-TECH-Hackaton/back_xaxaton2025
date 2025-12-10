@@ -16,6 +16,8 @@ import (
 func SetupRoutes() *gin.Engine {
 	r := gin.Default()
 
+	r.SetTrustedProxies(nil)
+
 	r.Static("/uploads", "./uploads")
 
 	corsConfig := cors.DefaultConfig()
@@ -77,8 +79,8 @@ func SetupRoutes() *gin.Engine {
 
 		events := api.Group("/events")
 		{
-			events.GET("", eventHandler.GetEvents)
-			events.GET("/:id", eventHandler.GetEvent)
+			events.GET("", middleware.OptionalAuthMiddleware(), eventHandler.GetEvents)
+			events.GET("/:id", middleware.OptionalAuthMiddleware(), eventHandler.GetEvent)
 			events.POST("", middleware.AuthMiddleware(), eventHandler.CreateEvent)
 			events.PUT("/:id", middleware.AuthMiddleware(), eventHandler.UpdateEvent)
 			events.DELETE("/:id", middleware.AuthMiddleware(), eventHandler.DeleteEvent)
@@ -151,6 +153,7 @@ func SetupRoutes() *gin.Engine {
 			{
 				adminUsers.POST("", adminHandler.CreateUser)
 				adminUsers.GET("", adminHandler.GetUsers)
+				adminUsers.GET("/export", adminHandler.ExportUsers)
 				adminUsers.GET("/:id", adminHandler.GetUser)
 				adminUsers.PUT("/:id", adminHandler.UpdateUser)
 				adminUsers.POST("/:id/reset-password", adminHandler.ResetUserPassword)

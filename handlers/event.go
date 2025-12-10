@@ -814,6 +814,17 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 		return
 	}
 
+	oldEvent := models.Event{
+		Title:            event.Title,
+		ShortDescription: event.ShortDescription,
+		FullDescription:  event.FullDescription,
+		StartDate:        event.StartDate,
+		EndDate:          event.EndDate,
+		Address:          event.Address,
+		PaymentInfo:      event.PaymentInfo,
+		MaxParticipants:  event.MaxParticipants,
+	}
+
 	if req.Title != "" {
 		if !utils.ValidateStringLength(req.Title, 1, 200) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Название события должно быть от 1 до 200 символов"})
@@ -935,12 +946,70 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 		}
 	}
 
+	var changes []string
+	if req.Title != "" && event.Title != oldEvent.Title {
+		changes = append(changes, fmt.Sprintf("Название: с \"%s\" на \"%s\"", oldEvent.Title, event.Title))
+	}
+	if req.ShortDescription != "" && event.ShortDescription != oldEvent.ShortDescription {
+		changes = append(changes, "Краткое описание было обновлено")
+	}
+	if req.FullDescription != "" && event.FullDescription != oldEvent.FullDescription {
+		changes = append(changes, "Полное описание было обновлено")
+	}
+	if !req.StartDate.IsZero() && !event.StartDate.Equal(oldEvent.StartDate) {
+		changes = append(changes, fmt.Sprintf("Дата начала: с %s на %s", 
+			oldEvent.StartDate.Format("02.01.2006 15:04"), 
+			event.StartDate.Format("02.01.2006 15:04")))
+	}
+	if !req.EndDate.IsZero() && !event.EndDate.Equal(oldEvent.EndDate) {
+		changes = append(changes, fmt.Sprintf("Дата окончания: с %s на %s", 
+			oldEvent.EndDate.Format("02.01.2006 15:04"), 
+			event.EndDate.Format("02.01.2006 15:04")))
+	}
+	if req.Address != "" && event.Address != oldEvent.Address {
+		oldAddr := oldEvent.Address
+		if oldAddr == "" {
+			oldAddr = "не указано"
+		}
+		newAddr := event.Address
+		if newAddr == "" {
+			newAddr = "не указано"
+		}
+		changes = append(changes, fmt.Sprintf("Место проведения: с \"%s\" на \"%s\"", oldAddr, newAddr))
+	}
+	if req.PaymentInfo != "" && event.PaymentInfo != oldEvent.PaymentInfo {
+		changes = append(changes, "Информация об оплате была обновлена")
+	}
+	if req.MaxParticipants != nil && event.MaxParticipants != nil && oldEvent.MaxParticipants != nil {
+		if *event.MaxParticipants != *oldEvent.MaxParticipants {
+			changes = append(changes, fmt.Sprintf("Максимальное количество участников: с %d на %d", 
+				*oldEvent.MaxParticipants, *event.MaxParticipants))
+		}
+	} else if req.MaxParticipants != nil {
+		if oldEvent.MaxParticipants == nil {
+			changes = append(changes, fmt.Sprintf("Максимальное количество участников установлено: %d", *event.MaxParticipants))
+		} else if event.MaxParticipants == nil {
+			changes = append(changes, "Максимальное количество участников снято")
+		}
+	}
+
+	var notificationMessage string
+	if len(changes) > 0 {
+		notificationMessage = "Данные события были изменены:\n\n"
+		for i, change := range changes {
+			notificationMessage += fmt.Sprintf("%d. %s\n", i+1, change)
+		}
+		notificationMessage += "\nПроверьте обновленную информацию о событии."
+	} else {
+		notificationMessage = "Данные события были обновлены. Проверьте информацию о событии."
+	}
+
 	var participants []models.EventParticipant
 	database.DB.Where("event_id = ?", eventID).Find(&participants)
 	for _, p := range participants {
 		var user models.User
 		if err := database.DB.Where("id = ?", p.UserID).First(&user).Error; err == nil {
-			go h.emailService.SendEventNotification(user.Email, event.Title, "Данные события были изменены. Проверьте обновленную информацию о событии.")
+			go h.emailService.SendEventNotification(user.Email, event.Title, notificationMessage)
 		} else {
 			h.logger.Error("Ошибка получения пользователя для уведомления об изменении события", zap.Any("userID", p.UserID), zap.Error(err))
 		}

@@ -17,6 +17,11 @@ import (
 var DB *gorm.DB
 
 func createDatabaseIfNotExists() error {
+	logger.GetLogger().Info("Проверка и создание базы данных", 
+		zap.String("host", config.AppConfig.DBHost),
+		zap.String("port", config.AppConfig.DBPort),
+		zap.String("database", config.AppConfig.DBName))
+
 	dsnPostgres := fmt.Sprintf(
 		"host=%s user=%s password=%s dbname=postgres port=%s sslmode=disable TimeZone=UTC",
 		config.AppConfig.DBHost,
@@ -31,40 +36,43 @@ func createDatabaseIfNotExists() error {
 	if err != nil {
 		return fmt.Errorf("не удалось подключиться к PostgreSQL: %w", err)
 	}
-
-	var count int64
-	err = db.Raw("SELECT COUNT(*) FROM pg_database WHERE datname = ?", config.AppConfig.DBName).Scan(&count).Error
-	if err != nil {
+	defer func() {
 		sqlDB, _ := db.DB()
 		if sqlDB != nil {
 			sqlDB.Close()
 		}
+	}()
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("ошибка получения sql.DB: %w", err)
+	}
+
+	var count int64
+	err = sqlDB.QueryRow("SELECT COUNT(*) FROM pg_database WHERE datname = $1", config.AppConfig.DBName).Scan(&count)
+	if err != nil {
 		return fmt.Errorf("ошибка проверки существования базы данных: %w", err)
 	}
 
 	if count == 0 {
-		sqlDB, err := db.DB()
-		if err != nil {
-			return fmt.Errorf("ошибка получения sql.DB: %w", err)
-		}
-		defer sqlDB.Close()
-
+		logger.GetLogger().Info("База данных не найдена, создание новой базы", zap.String("database", config.AppConfig.DBName))
+		
 		createSQL := fmt.Sprintf(`CREATE DATABASE "%s"`, config.AppConfig.DBName)
 		if _, err := sqlDB.Exec(createSQL); err != nil {
 			return fmt.Errorf("ошибка создания базы данных: %w", err)
 		}
-		logger.GetLogger().Info("База данных создана", zap.String("database", config.AppConfig.DBName))
+		
+		logger.GetLogger().Info("✅ База данных успешно создана", zap.String("database", config.AppConfig.DBName))
 	} else {
-		sqlDB, _ := db.DB()
-		if sqlDB != nil {
-			sqlDB.Close()
-		}
+		logger.GetLogger().Info("База данных уже существует", zap.String("database", config.AppConfig.DBName))
 	}
 
 	return nil
 }
 
 func Connect() {
+	logger.GetLogger().Info("Инициализация подключения к базе данных")
+	
 	if err := createDatabaseIfNotExists(); err != nil {
 		if strings.Contains(err.Error(), "не удалось подключиться") {
 			logger.GetLogger().Fatal("Ошибка подключения к PostgreSQL. Убедитесь, что PostgreSQL запущен.", zap.Error(err))

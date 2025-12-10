@@ -142,11 +142,23 @@ func (h *AuthHandler) Register(c *gin.Context) {
 // @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
 // @Router /auth/verify-email [post]
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			h.logger.Error("Паника в VerifyEmail", zap.Any("panic", r))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка сервера"})
+		}
+	}()
+	
 	var req dto.VerifyEmailRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Warn("Неверные данные в запросе VerifyEmail", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
 		return
 	}
+
+	h.logger.Info("Начало обработки подтверждения email", 
+		zap.String("email", req.Email),
+		zap.String("code", req.Code))
 
 	if !utils.ValidateVerificationCode(req.Code) {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -157,13 +169,38 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	}
 
 	var registrationPending models.RegistrationPending
-	if err := database.DB.Where("email = ? AND code = ? AND expires_at > ?", req.Email, req.Code, time.Now()).First(&registrationPending).Error; err != nil {
+	now := time.Now()
+	
+	var allCodes []models.RegistrationPending
+	database.DB.Where("email = ?", req.Email).Find(&allCodes)
+	h.logger.Info("Поиск кода подтверждения", 
+		zap.String("email", req.Email),
+		zap.String("code", req.Code),
+		zap.Time("currentTime", now),
+		zap.Int("foundRecords", len(allCodes)))
+	
+	for _, rec := range allCodes {
+		h.logger.Info("Найденная запись", 
+			zap.String("code", rec.Code),
+			zap.Time("expiresAt", rec.ExpiresAt),
+			zap.Bool("isExpired", rec.ExpiresAt.Before(now)))
+	}
+	
+	if err := database.DB.Where("email = ? AND code = ? AND expires_at > ?", req.Email, req.Code, now).First(&registrationPending).Error; err != nil {
+		h.logger.Warn("Код подтверждения не найден или истек", 
+			zap.String("email", req.Email),
+			zap.String("code", req.Code),
+			zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Неверный или истекший код подтверждения",
 			"message": "Код подтверждения неверен или истек. Вы можете запросить новый код.",
 		})
 		return
 	}
+	
+	h.logger.Info("Код подтверждения найден", 
+		zap.String("email", registrationPending.Email),
+		zap.String("code", registrationPending.Code))
 
 	var existingUser models.User
 	if err := database.DB.Where("email = ? AND status != ?", req.Email, models.UserStatusDeleted).First(&existingUser).Error; err == nil {
@@ -181,31 +218,33 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 		FullName:      registrationPending.FullName,
 		Email:         registrationPending.Email,
 		Password:      registrationPending.PasswordHash,
+		YandexID:      nil,
 		Role:          models.RoleUser,
 		Status:        models.UserStatusActive,
 		EmailVerified: true,
 		AuthProvider:  "email",
 	}
 
-	tx := database.DB.Begin()
-	if err := tx.Create(&user).Error; err != nil {
-		tx.Rollback()
-		h.logger.Error("Ошибка создания пользователя после подтверждения", zap.Error(err))
+	if user.ID == uuid.Nil {
+		user.ID = uuid.New()
+	}
+
+	if err := database.DB.Create(&user).Error; err != nil {
+		h.logger.Error("Ошибка создания пользователя после подтверждения", 
+			zap.Error(err),
+			zap.String("email", user.Email),
+			zap.String("userID", user.ID.String()))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании учетной записи"})
 		return
 	}
 
-	if err := tx.Delete(&registrationPending).Error; err != nil {
-		tx.Rollback()
-		h.logger.Error("Ошибка удаления записи регистрации", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при завершении регистрации"})
-		return
-	}
+	h.logger.Info("Пользователь успешно создан", 
+		zap.String("email", user.Email),
+		zap.String("userID", user.ID.String()),
+		zap.String("fullName", user.FullName))
 
-	if err := tx.Commit().Error; err != nil {
-		h.logger.Error("Ошибка коммита транзакции", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при завершении регистрации"})
-		return
+	if err := database.DB.Delete(&registrationPending).Error; err != nil {
+		h.logger.Warn("Ошибка удаления записи регистрации (не критично)", zap.Error(err))
 	}
 
 	go func() {
@@ -216,19 +255,30 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 
 	token, err := utils.GenerateToken(user.ID, user.Email, string(user.Role))
 	if err != nil {
-		h.logger.Error("Ошибка генерации токена", zap.Error(err))
+		h.logger.Error("Ошибка генерации токена", 
+			zap.Error(err),
+			zap.String("userID", user.ID.String()),
+			zap.String("email", user.Email),
+			zap.String("role", string(user.Role)))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка генерации токена"})
 		return
 	}
 
-	c.JSON(http.StatusOK, dto.AuthResponse{
+	response := dto.AuthResponse{
 		Token: token,
 		User: dto.UserInfo{
-			ID:    user.ID.String(),
-			Email: user.Email,
-			Role:  string(user.Role),
+			ID:       user.ID.String(),
+			FullName: user.FullName,
+			Email:    user.Email,
+			Role:     string(user.Role),
 		},
-	})
+	}
+
+	h.logger.Info("Регистрация успешно завершена", 
+		zap.String("userID", user.ID.String()),
+		zap.String("email", user.Email))
+
+	c.JSON(http.StatusOK, response)
 }
 
 // ResendCode godoc

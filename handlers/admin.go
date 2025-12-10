@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/xuri/excelize/v2"
 	"go.uber.org/zap"
 )
 
@@ -438,4 +440,126 @@ func (h *AdminHandler) GetAdminEvents(c *gin.Context) {
 			TotalPages: totalPages,
 		},
 	})
+}
+
+func (h *AdminHandler) ExportUsers(c *gin.Context) {
+	format := c.DefaultQuery("format", "xlsx")
+
+	var users []models.User
+	query := database.DB.Unscoped() // Include soft-deleted users for admin export
+
+	fullName := c.Query("fullName")
+	if fullName != "" {
+		if !utils.ValidateStringLength(fullName, 1, 100) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ФИО должно быть от 1 до 100 символов"})
+			return
+		}
+		query = query.Where("full_name ILIKE ?", "%"+fullName+"%")
+	}
+
+	role := c.Query("role")
+	if role != "" {
+		if !models.IsValidUserRole(models.UserRole(role)) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверная роль пользователя"})
+			return
+		}
+		query = query.Where("role = ?", role)
+	}
+
+	status := c.Query("status")
+	if status != "" {
+		if !models.IsValidUserStatus(models.UserStatus(status)) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный статус пользователя"})
+			return
+		}
+		query = query.Where("status = ?", status)
+	}
+
+	dateFrom := c.Query("dateFrom")
+	if dateFrom != "" {
+		if t, err := time.Parse("2006-01-02", dateFrom); err == nil {
+			query = query.Where("created_at >= ?", t)
+		}
+	}
+
+	dateTo := c.Query("dateTo")
+	if dateTo != "" {
+		if t, err := time.Parse("2006-01-02", dateTo); err == nil {
+			query = query.Where("created_at <= ?", t.Add(24*time.Hour))
+		}
+	}
+
+	if err := query.Order("created_at DESC").Find(&users).Error; err != nil {
+		h.logger.Error("Ошибка при получении пользователей для экспорта", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении пользователей"})
+		return
+	}
+
+	h.logger.Info("Экспорт пользователей", zap.Int("count", len(users)))
+
+	if format == "csv" {
+		c.Header("Content-Type", "text/csv; charset=utf-8")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=users_%s.csv", time.Now().Format("2006-01-02")))
+		c.Writer.WriteString("\xEF\xBB\xBF") // BOM for UTF-8 in Excel
+		c.Writer.WriteString("ФИО,Email,Роль,Статус,Дата регистрации\n")
+		for _, u := range users {
+			c.Writer.WriteString(fmt.Sprintf("%s,%s,%s,%s,%s\n",
+				u.FullName,
+				u.Email,
+				string(u.Role),
+				string(u.Status),
+				u.CreatedAt.Format("2006-01-02")))
+		}
+		return
+	}
+
+	// Default to XLSX
+	f := excelize.NewFile()
+	defer func() {
+		if err := f.Close(); err != nil {
+			h.logger.Error("Ошибка при закрытии файла Excel", zap.Error(err))
+		}
+	}()
+
+	sheetName := "Пользователи"
+	index, err := f.NewSheet(sheetName)
+	if err != nil {
+		h.logger.Error("Ошибка при создании листа Excel", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании файла"})
+		return
+	}
+
+	// Set active sheet
+	f.SetActiveSheet(index)
+
+	// Delete default Sheet1 if it exists
+	if sheetIndex, _ := f.GetSheetIndex("Sheet1"); sheetIndex != -1 {
+		f.DeleteSheet("Sheet1")
+	}
+
+	// Set headers
+	f.SetCellValue(sheetName, "A1", "ФИО")
+	f.SetCellValue(sheetName, "B1", "Email")
+	f.SetCellValue(sheetName, "C1", "Роль")
+	f.SetCellValue(sheetName, "D1", "Статус")
+	f.SetCellValue(sheetName, "E1", "Дата регистрации")
+
+	// Populate data
+	for i, u := range users {
+		row := i + 2 // Start from row 2
+		f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), u.FullName)
+		f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), u.Email)
+		f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), string(u.Role))
+		f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), string(u.Status))
+		f.SetCellValue(sheetName, fmt.Sprintf("E%d", row), u.CreatedAt.Format("2006-01-02"))
+	}
+
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=users_%s.xlsx", time.Now().Format("2006-01-02")))
+
+	if err := f.Write(c.Writer); err != nil {
+		h.logger.Error("Ошибка при записи файла Excel", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при экспорте"})
+		return
+	}
 }
