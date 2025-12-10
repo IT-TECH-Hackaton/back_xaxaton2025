@@ -386,6 +386,27 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 		}
 	}
 
+	if strings.HasPrefix(event.ImageURL, "/uploads/") {
+		filePath := strings.TrimPrefix(event.ImageURL, "/")
+		if fileInfo, err := os.Stat(filePath); err == nil {
+			h.logger.Debug("Файл изображения найден при получении события",
+				zap.String("eventID", eventID),
+				zap.String("imageURL", event.ImageURL),
+				zap.String("filePath", filePath),
+				zap.Int64("fileSize", fileInfo.Size()))
+		} else {
+			h.logger.Warn("Файл изображения не найден при получении события",
+				zap.String("eventID", eventID),
+				zap.String("imageURL", event.ImageURL),
+				zap.String("filePath", filePath),
+				zap.Error(err))
+		}
+	}
+
+	h.logger.Debug("Возврат информации о событии",
+		zap.String("eventID", eventID),
+		zap.String("imageURL", event.ImageURL))
+
 	c.JSON(http.StatusOK, dto.EventDetailResponse{
 		ID:                event.ID.String(),
 		Title:             event.Title,
@@ -548,84 +569,42 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 	var fileHeader *multipart.FileHeader
 	var fileErr error
 	if !strings.HasPrefix(contentType, "application/json") {
+		if strings.HasPrefix(contentType, "multipart/form-data") {
+			if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+				h.logger.Warn("Ошибка парсинга multipart формы", zap.Error(err))
+			}
+		}
 		fileHeader, fileErr = c.FormFile("image")
+		if fileErr != nil {
+			if fileErr == http.ErrMissingFile {
+				h.logger.Debug("Файл image не передан в форме")
+				fileErr = nil
+				fileHeader = nil
+			} else {
+				h.logger.Warn("Ошибка при получении файла изображения (файл будет проигнорирован, если указан imageURL)", zap.Error(fileErr))
+				fileErr = nil
+				fileHeader = nil
+			}
+		} else if fileHeader != nil {
+			h.logger.Debug("Получен файл для загрузки", zap.String("filename", fileHeader.Filename), zap.Int64("size", fileHeader.Size))
+		}
 	} else {
-		fileErr = http.ErrMissingFile
+		fileErr = nil
+		fileHeader = nil
 	}
 
 	if fileErr == nil && fileHeader != nil {
-		if fileHeader.Size > 10*1024*1024 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Размер файла не должен превышать 10MB"})
-			return
-		}
-
-		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
-		allowedExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
-		allowed := false
-		for _, e := range allowedExts {
-			if ext == e {
-				allowed = true
-				break
+		uploadedURL, uploadErr := h.processEventImageFile(fileHeader)
+		if uploadErr != nil {
+			if imageURL == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": uploadErr.Error()})
+				return
 			}
+			h.logger.Warn("Ошибка при обработке файла, используется imageURL", zap.Error(uploadErr))
+		} else {
+			imageURL = uploadedURL
+			h.logger.Info("Файл успешно загружен и установлен как imageURL", zap.String("imageURL", imageURL))
 		}
-
-		if !allowed {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Недопустимый формат файла. Разрешены: jpg, jpeg, png, gif, webp, svg"})
-			return
-		}
-
-		src, err := fileHeader.Open()
-		if err != nil {
-			h.logger.Error("Ошибка открытия файла изображения", zap.Error(err))
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка при открытии файла"})
-			return
-		}
-		defer src.Close()
-
-		buffer := make([]byte, 512)
-		if _, err := src.Read(buffer); err != nil && err != io.EOF {
-			h.logger.Error("Ошибка чтения файла изображения", zap.Error(err))
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка при чтении файла"})
-			return
-		}
-
-		mimeType := http.DetectContentType(buffer)
-		if !h.isValidImageFile(buffer, mimeType, ext) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Недопустимый тип файла. Файл должен быть изображением (JPEG, PNG, GIF, WebP, SVG)"})
-			return
-		}
-
-		if _, err := src.Seek(0, io.SeekStart); err != nil {
-			h.logger.Error("Ошибка сброса указателя файла", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при чтении файла"})
-			return
-		}
-
-		uploadDir := "uploads/events"
-		if err := os.MkdirAll(uploadDir, 0755); err != nil {
-			h.logger.Error("Ошибка создания директории для изображений событий", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании директории"})
-			return
-		}
-
-		filename := fmt.Sprintf("%s_%d%s", uuid.New().String(), time.Now().Unix(), ext)
-		filePath := filepath.Join(uploadDir, filename)
-
-		dst, err := os.Create(filePath)
-		if err != nil {
-			h.logger.Error("Ошибка создания файла изображения", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании файла"})
-			return
-		}
-		defer dst.Close()
-
-		if _, err := io.Copy(dst, src); err != nil {
-			h.logger.Error("Ошибка сохранения файла изображения", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при сохранении файла"})
-			return
-		}
-
-		imageURL = fmt.Sprintf("/uploads/events/%s", filename)
 	}
 
 	if imageURL == "" {
@@ -694,6 +673,27 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	organizerID := userID.(uuid.UUID)
 
+	if strings.HasPrefix(imageURL, "/uploads/") {
+		filePath := strings.TrimPrefix(imageURL, "/")
+		if fileInfo, err := os.Stat(filePath); err == nil {
+			h.logger.Info("Проверка файла перед сохранением события",
+				zap.String("imageURL", imageURL),
+				zap.String("filePath", filePath),
+				zap.Int64("fileSize", fileInfo.Size()),
+				zap.Bool("fileExists", true))
+		} else {
+			h.logger.Warn("Файл изображения не найден по указанному пути",
+				zap.String("imageURL", imageURL),
+				zap.String("filePath", filePath),
+				zap.Error(err))
+		}
+	}
+
+	h.logger.Info("Создание события в БД",
+		zap.String("title", title),
+		zap.String("imageURL", imageURL),
+		zap.String("organizerID", organizerID.String()))
+
 	event := models.Event{
 		Title:            title,
 		ShortDescription: shortDescription,
@@ -717,6 +717,10 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании события"})
 		return
 	}
+
+	h.logger.Info("Событие успешно создано в БД",
+		zap.String("eventID", event.ID.String()),
+		zap.String("imageURL", event.ImageURL))
 
 	if len(categoryIDs) > 0 {
 		if len(categoryIDs) > 10 {
@@ -771,9 +775,15 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 		}
 	}
 
+	h.logger.Info("Отправка ответа о создании события",
+		zap.String("eventID", event.ID.String()),
+		zap.String("imageURL", event.ImageURL),
+		zap.String("title", event.Title))
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":      event.ID,
 		"message": "Событие создано",
+		"imageURL": event.ImageURL,
 	})
 }
 
@@ -1273,6 +1283,112 @@ func (h *EventHandler) ExportParticipants(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при экспорте"})
 		return
 	}
+}
+
+func (h *EventHandler) processEventImageFile(fileHeader *multipart.FileHeader) (string, error) {
+	h.logger.Info("Начало обработки файла изображения",
+		zap.String("originalFilename", fileHeader.Filename),
+		zap.Int64("size", fileHeader.Size))
+
+	if fileHeader.Size == 0 {
+		return "", fmt.Errorf("файл пустой")
+	}
+
+	if fileHeader.Size > 10*1024*1024 {
+		return "", fmt.Errorf("размер файла не должен превышать 10MB")
+	}
+
+	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+	if ext == "" {
+		ext = ".jpg"
+	}
+
+	allowedExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
+	allowed := false
+	for _, e := range allowedExts {
+		if ext == e {
+			allowed = true
+			break
+		}
+	}
+
+	if !allowed {
+		return "", fmt.Errorf("недопустимый формат файла. Разрешены: jpg, jpeg, png, gif, webp, svg")
+	}
+
+	src, err := fileHeader.Open()
+	if err != nil {
+		return "", fmt.Errorf("ошибка при открытии файла: %w", err)
+	}
+	defer src.Close()
+
+	buffer := make([]byte, 512)
+	if _, err := src.Read(buffer); err != nil && err != io.EOF {
+		return "", fmt.Errorf("ошибка при чтении файла: %w", err)
+	}
+
+	mimeType := http.DetectContentType(buffer)
+	h.logger.Debug("Обнаружен тип файла", zap.String("mimeType", mimeType), zap.String("ext", ext))
+	
+	if !h.isValidImageFile(buffer, mimeType, ext) {
+		return "", fmt.Errorf("недопустимый тип файла. Файл должен быть изображением (JPEG, PNG, GIF, WebP, SVG)")
+	}
+
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return "", fmt.Errorf("ошибка при чтении файла: %w", err)
+	}
+
+	uploadDir := "uploads/events"
+	absUploadDir, _ := filepath.Abs(uploadDir)
+	h.logger.Debug("Путь к директории для загрузки", zap.String("relative", uploadDir), zap.String("absolute", absUploadDir))
+	
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		return "", fmt.Errorf("ошибка при создании директории: %w", err)
+	}
+
+	filename := fmt.Sprintf("%s_%d%s", uuid.New().String(), time.Now().Unix(), ext)
+	filePath := filepath.Join(uploadDir, filename)
+	absFilePath, _ := filepath.Abs(filePath)
+	
+	h.logger.Debug("Сохраняю файл",
+		zap.String("filename", filename),
+		zap.String("relativePath", filePath),
+		zap.String("absolutePath", absFilePath))
+
+	dst, err := os.Create(filePath)
+	if err != nil {
+		h.logger.Error("Ошибка создания файла", zap.String("path", filePath), zap.Error(err))
+		return "", fmt.Errorf("ошибка при создании файла: %w", err)
+	}
+	defer dst.Close()
+
+	bytesWritten, err := io.Copy(dst, src)
+	if err != nil {
+		os.Remove(filePath)
+		h.logger.Error("Ошибка сохранения файла", zap.String("path", filePath), zap.Error(err))
+		return "", fmt.Errorf("ошибка при сохранении файла: %w", err)
+	}
+
+	if err := dst.Close(); err != nil {
+		h.logger.Error("Ошибка закрытия файла после записи", zap.String("path", filePath), zap.Error(err))
+	}
+
+	if fileInfo, statErr := os.Stat(filePath); statErr == nil {
+		h.logger.Info("Файл успешно сохранен",
+			zap.String("filename", filename),
+			zap.String("relativePath", filePath),
+			zap.String("absolutePath", absFilePath),
+			zap.Int64("bytesWritten", bytesWritten),
+			zap.Int64("fileSize", fileInfo.Size()),
+			zap.String("fileMode", fileInfo.Mode().String()))
+	} else {
+		h.logger.Warn("Файл сохранен, но не удалось получить информацию о нем", zap.String("path", filePath), zap.Error(statErr))
+	}
+
+	imageURL := fmt.Sprintf("/uploads/events/%s", filename)
+	h.logger.Info("Сформирован URL для изображения", zap.String("imageURL", imageURL))
+
+	return imageURL, nil
 }
 
 func (h *EventHandler) isValidImageFile(buffer []byte, mimeType string, ext string) bool {

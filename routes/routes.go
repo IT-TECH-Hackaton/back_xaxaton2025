@@ -1,14 +1,18 @@
 package routes
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
 	"bekend/config"
 	"bekend/handlers"
 	"bekend/middleware"
+	"bekend/utils"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
@@ -18,7 +22,41 @@ func SetupRoutes() *gin.Engine {
 
 	r.SetTrustedProxies(nil)
 
-	r.Static("/uploads", "./uploads")
+	uploadDir := "./uploads"
+	absPath, err := filepath.Abs(uploadDir)
+	if err != nil {
+		absPath = uploadDir
+	}
+	
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		if logger := utils.GetLogger(); logger != nil {
+			logger.Warn("Не удалось создать директорию uploads", zap.Error(err))
+		}
+	}
+	
+	if err := os.MkdirAll(filepath.Join(uploadDir, "events"), 0755); err != nil {
+		if logger := utils.GetLogger(); logger != nil {
+			logger.Warn("Не удалось создать директорию uploads/events", zap.Error(err))
+		}
+	}
+	
+	if err := os.MkdirAll(filepath.Join(uploadDir, "avatars"), 0755); err != nil {
+		if logger := utils.GetLogger(); logger != nil {
+			logger.Warn("Не удалось создать директорию uploads/avatars", zap.Error(err))
+		}
+	}
+	
+	if logger := utils.GetLogger(); logger != nil {
+		workDir, _ := os.Getwd()
+		logger.Info("Настроен статический сервер для загрузок",
+			zap.String("route", "/uploads"),
+			zap.String("directory", uploadDir),
+			zap.String("absolutePath", absPath),
+			zap.String("workingDirectory", workDir),
+			zap.String("note", "Файлы из подпапок доступны по /uploads/подпапка/файл"))
+	}
+	
+	r.Static("/uploads", uploadDir)
 
 	corsConfig := cors.DefaultConfig()
 	if config.AppConfig != nil && config.AppConfig.CORSAllowOrigins != "" {

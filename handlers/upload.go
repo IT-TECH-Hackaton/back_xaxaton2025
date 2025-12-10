@@ -30,7 +30,12 @@ func NewUploadHandler() *UploadHandler {
 func (h *UploadHandler) UploadImage(c *gin.Context) {
 	file, err := c.FormFile("image")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Файл не найден"})
+		if err == http.ErrMissingFile {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Файл не найден. Убедитесь, что поле формы называется 'image' и файл был загружен"})
+		} else {
+			h.logger.Error("Ошибка при получении файла", zap.Error(err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка при обработке файла: " + err.Error()})
+		}
 		return
 	}
 

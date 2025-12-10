@@ -415,12 +415,20 @@ func main() {
 
 	if len(createdUsers) > 0 {
 		fmt.Println("🎫 Добавление участников к событиям...")
-		var activeEvents []models.Event
-		if err := database.DB.Where("status = ?", models.EventStatusActive).Find(&activeEvents).Error; err != nil {
-			log.Printf("Ошибка получения активных событий: %v", err)
+		var allEvents []models.Event
+		if err := database.DB.Find(&allEvents).Error; err != nil {
+			log.Printf("Ошибка получения событий: %v", err)
 		} else {
-			for _, event := range activeEvents {
-				participantsCount := rand.Intn(5) + 1
+			for _, event := range allEvents {
+				var participantsCount int
+				if event.Status == models.EventStatusActive {
+					participantsCount = rand.Intn(5) + 1
+				} else if event.Status == models.EventStatusPast {
+					participantsCount = rand.Intn(4) + 2
+				} else {
+					continue
+				}
+
 				if participantsCount > len(createdUsers) {
 					participantsCount = len(createdUsers)
 				}
@@ -450,8 +458,99 @@ func main() {
 				}
 
 				if addedCount > 0 {
-					fmt.Printf("  ✅ Добавлено %d участников к событию: %s\n", addedCount, event.Title)
+					statusEmoji := "🟢"
+					if event.Status == models.EventStatusPast {
+						statusEmoji = "⚫"
+					}
+					fmt.Printf("  %s Добавлено %d участников к событию: %s\n", statusEmoji, addedCount, event.Title)
 				}
+			}
+		}
+		fmt.Println()
+
+		fmt.Println("⭐ Создание отзывов для прошедших событий...")
+		var pastEvents []models.Event
+		if err := database.DB.Where("status = ?", models.EventStatusPast).Find(&pastEvents).Error; err != nil {
+			log.Printf("Ошибка получения прошедших событий: %v", err)
+		} else {
+			reviewComments := []string{
+				"Отличное событие! Очень понравилось, обязательно приду еще раз.",
+				"Хорошая организация, интересная программа. Рекомендую!",
+				"Впечатления отличные! Спасибо организаторам за такое мероприятие.",
+				"Было здорово! Очень интересно и познавательно.",
+				"Прекрасное событие, получил много положительных эмоций.",
+				"Мероприятие прошло на высшем уровне. Очень доволен!",
+				"Отличная атмосфера, замечательные люди. Все супер!",
+				"Не ожидал, что будет так интересно. Восхищен!",
+				"Очень понравилось, жду следующих подобных мероприятий.",
+				"Отличная организация, все было на высоте.",
+				"Было немного скучновато, но в целом неплохо.",
+				"Неплохое мероприятие, но есть куда расти.",
+				"Хорошее событие, но ожидал большего.",
+				"Средненько, ничего особенного.",
+				"Мероприятие прошло нормально, но не более того.",
+			}
+
+			reviewsCreated := 0
+			for _, event := range pastEvents {
+				var participants []models.EventParticipant
+				if err := database.DB.Where("event_id = ?", event.ID).Find(&participants).Error; err != nil {
+					continue
+				}
+
+				if len(participants) == 0 {
+					continue
+				}
+
+				reviewsCount := rand.Intn(len(participants)) + 1
+				if reviewsCount > len(participants) {
+					reviewsCount = len(participants)
+				}
+
+				participantIndices := rand.Perm(len(participants))[:reviewsCount]
+				eventReviewsCreated := 0
+
+				for _, idx := range participantIndices {
+					participant := participants[idx]
+					
+					var existingReview models.EventReview
+					if err := database.DB.Where("event_id = ? AND user_id = ?", event.ID, participant.UserID).First(&existingReview).Error; err == nil {
+						continue
+					}
+
+					rating := rand.Intn(3) + 3
+					if rand.Float32() < 0.2 {
+						rating = rand.Intn(2) + 1
+					}
+
+					comment := reviewComments[rand.Intn(len(reviewComments))]
+					if rating < 3 && rand.Float32() < 0.5 {
+						comment = reviewComments[rand.Intn(5) + 10]
+					}
+
+					review := models.EventReview{
+						ID:      uuid.New(),
+						EventID: event.ID,
+						UserID:  participant.UserID,
+						Rating:  rating,
+						Comment: comment,
+					}
+
+					if err := database.DB.Create(&review).Error; err != nil {
+						log.Printf("Ошибка создания отзыва для события %s: %v", event.Title, err)
+					} else {
+						eventReviewsCreated++
+						reviewsCreated++
+					}
+				}
+
+				if eventReviewsCreated > 0 {
+					fmt.Printf("  ⭐ Создано %d отзывов для события: %s\n", eventReviewsCreated, event.Title)
+				}
+			}
+
+			if reviewsCreated > 0 {
+				fmt.Printf("  ✅ Всего создано отзывов: %d\n", reviewsCreated)
 			}
 		}
 		fmt.Println()
