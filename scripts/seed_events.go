@@ -502,13 +502,27 @@ func main() {
 					continue
 				}
 
-				reviewsCount := rand.Intn(len(participants)) + 1
+				maxReviews := len(participants) / 2
+				if maxReviews < 1 && len(participants) > 0 {
+					maxReviews = 1
+				}
+				
+				minReviews := maxReviews / 2
+				if minReviews < 1 {
+					minReviews = 1
+				}
+				
+				reviewsCount := rand.Intn(maxReviews-minReviews+1) + minReviews
 				if reviewsCount > len(participants) {
-					reviewsCount = len(participants)
+					reviewsCount = len(participants) / 2
+					if reviewsCount < 1 {
+						reviewsCount = 1
+					}
 				}
 
 				participantIndices := rand.Perm(len(participants))[:reviewsCount]
 				eventReviewsCreated := 0
+				eventParticipantsWithoutReview := len(participants) - reviewsCount
 
 				for _, idx := range participantIndices {
 					participant := participants[idx]
@@ -545,7 +559,10 @@ func main() {
 				}
 
 				if eventReviewsCreated > 0 {
-					fmt.Printf("  ⭐ Создано %d отзывов для события: %s\n", eventReviewsCreated, event.Title)
+					fmt.Printf("  ⭐ Создано %d отзывов из %d участников для события: %s\n", eventReviewsCreated, len(participants), event.Title)
+					if eventParticipantsWithoutReview > 0 {
+						fmt.Printf("     (Осталось %d участников без отзывов для тестирования)\n", eventParticipantsWithoutReview)
+					}
 				}
 			}
 
