@@ -1,0 +1,9 @@
+.env
+uploads/
+*.go
+!main.go
+!scripts/*.go
+.git
+.gitignore
+README.md
+

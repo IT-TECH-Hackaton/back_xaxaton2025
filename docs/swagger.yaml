@@ -1,0 +1,1470 @@
+basePath: /api
+definitions:
+  dto.AuthResponse:
+    properties:
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/dto.UserInfo'
+    type: object
+  dto.CategoryInfo:
+    properties:
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  dto.EventDetailResponse:
+    properties:
+      address:
+        type: string
+      averageRating:
+        type: number
+      categories:
+        description: Категории события
+        items:
+          $ref: '#/definitions/dto.CategoryInfo'
+        type: array
+      endDate:
+        type: string
+      fullDescription:
+        type: string
+      id:
+        type: string
+      imageURL:
+        type: string
+      isParticipant:
+        type: boolean
+      latitude:
+        type: number
+      longitude:
+        type: number
+      maxParticipants:
+        type: integer
+      organizer:
+        $ref: '#/definitions/dto.UserInfo'
+      participantsCount:
+        type: integer
+      paymentInfo:
+        type: string
+      shortDescription:
+        type: string
+      startDate:
+        type: string
+      status:
+        type: string
+      tags:
+        description: Теги события
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+      totalReviews:
+        type: integer
+      yandexMapLink:
+        type: string
+    type: object
+  dto.EventResponse:
+    properties:
+      address:
+        type: string
+      categories:
+        description: Категории события
+        items:
+          $ref: '#/definitions/dto.CategoryInfo'
+        type: array
+      endDate:
+        type: string
+      fullDescription:
+        type: string
+      id:
+        type: string
+      imageURL:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      maxParticipants:
+        type: integer
+      organizer:
+        $ref: '#/definitions/dto.UserInfo'
+      participantsCount:
+        type: integer
+      paymentInfo:
+        type: string
+      shortDescription:
+        type: string
+      startDate:
+        type: string
+      status:
+        type: string
+      tags:
+        description: Теги события
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+      yandexMapLink:
+        type: string
+    type: object
+  dto.ForgotPasswordRequest:
+    properties:
+      email:
+        type: string
+    required:
+    - email
+    type: object
+  dto.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  dto.Pagination:
+    properties:
+      limit:
+        type: integer
+      page:
+        type: integer
+      total:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  dto.PaginationResponse:
+    properties:
+      data: {}
+      pagination:
+        $ref: '#/definitions/dto.Pagination'
+    type: object
+  dto.RegisterRequest:
+    properties:
+      email:
+        type: string
+      fullName:
+        type: string
+      password:
+        type: string
+      passwordConfirm:
+        type: string
+    required:
+    - email
+    - fullName
+    - password
+    - passwordConfirm
+    type: object
+  dto.ResetPasswordRequest:
+    properties:
+      password:
+        type: string
+      passwordConfirm:
+        type: string
+      token:
+        type: string
+    required:
+    - password
+    - passwordConfirm
+    - token
+    type: object
+  dto.ReviewResponse:
+    properties:
+      comment:
+        type: string
+      createdAt:
+        type: string
+      eventID:
+        type: string
+      id:
+        type: string
+      rating:
+        type: integer
+      updatedAt:
+        type: string
+      user:
+        $ref: '#/definitions/dto.UserInfo'
+      userID:
+        type: string
+    type: object
+  dto.ReviewsResponse:
+    properties:
+      averageRating:
+        type: number
+      data:
+        items:
+          $ref: '#/definitions/dto.ReviewResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/dto.Pagination'
+      totalReviews:
+        type: integer
+    type: object
+  dto.UpdateEventRequest:
+    properties:
+      address:
+        type: string
+      categoryIDs:
+        description: Категории события
+        items:
+          type: string
+        type: array
+      endDate:
+        type: string
+      fullDescription:
+        type: string
+      imageURL:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      maxParticipants:
+        type: integer
+      paymentInfo:
+        type: string
+      shortDescription:
+        type: string
+      startDate:
+        type: string
+      status:
+        type: string
+      tags:
+        description: Теги события (массив строк)
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+      yandexMapLink:
+        type: string
+    type: object
+  dto.UserInfo:
+    properties:
+      email:
+        type: string
+      fullName:
+        type: string
+      id:
+        type: string
+      role:
+        type: string
+    type: object
+  dto.VerifyEmailRequest:
+    properties:
+      code:
+        type: string
+      email:
+        type: string
+    required:
+    - code
+    - email
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Бекенд для системы электронной афиши на Go с полной функциональностью
+    авторизации, управления событиями и администрирования.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: Bekend Backend API
+  version: 1.0.0
+paths:
+  /admin/categories:
+    post:
+      consumes:
+      - application/json
+      description: Создание новой категории событий (только для администраторов)
+      parameters:
+      - description: Данные категории
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            description:
+              type: string
+            name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Категория создана
+          schema:
+            $ref: '#/definitions/dto.CategoryInfo'
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Требуется роль администратора
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Категория с таким названием уже существует
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Создать категорию
+      tags:
+      - Категории
+  /auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Отправка письма со ссылкой для сброса пароля
+      parameters:
+      - description: Email для восстановления
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Письмо отправлено (или пользователь не найден)
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Запрос восстановления пароля
+      tags:
+      - Авторизация
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Авторизация пользователя по email и паролю
+      parameters:
+      - description: Email и пароль
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Успешный вход, токен выдан
+          schema:
+            $ref: '#/definitions/dto.AuthResponse'
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Неверные данные или почта не подтверждена
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Вход в систему
+      tags:
+      - Авторизация
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Выход из системы (на клиенте необходимо удалить токен)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Выход выполнен
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Выход из системы
+      tags:
+      - Авторизация
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Регистрация пользователя с отправкой кода подтверждения на email
+      parameters:
+      - description: Данные для регистрации
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Код подтверждения отправлен
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Пользователь уже существует
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Регистрация нового пользователя
+      tags:
+      - Авторизация
+  /auth/resend-code:
+    post:
+      consumes:
+      - application/json
+      description: Отправка нового кода подтверждения на email
+      parameters:
+      - description: Email для повторной отправки кода
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            email:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Новый код отправлен
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Ошибка валидации или почта уже подтверждена
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Запрос на регистрацию не найден
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Повторная отправка кода подтверждения
+      tags:
+      - Авторизация
+  /auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Сброс пароля по токену из письма
+      parameters:
+      - description: Токен и новый пароль
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Пароль успешно изменен
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Неверный или истекший токен, ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Пользователь не найден
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Сброс пароля
+      tags:
+      - Авторизация
+  /auth/verify-email:
+    post:
+      consumes:
+      - application/json
+      description: Подтверждение email с помощью кода из письма и создание учетной
+        записи
+      parameters:
+      - description: Email и код подтверждения
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.VerifyEmailRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Учетная запись создана, токен выдан
+          schema:
+            $ref: '#/definitions/dto.AuthResponse'
+        "400":
+          description: Неверный или истекший код
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Пользователь уже существует
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Подтверждение email
+      tags:
+      - Авторизация
+  /categories:
+    get:
+      consumes:
+      - application/json
+      description: Получение списка категорий событий с пагинацией и поиском
+      parameters:
+      - description: 'Номер страницы (по умолчанию: 1)'
+        in: query
+        name: page
+        type: integer
+      - description: 'Количество элементов на странице (по умолчанию: 20, максимум:
+          100)'
+        in: query
+        name: limit
+        type: integer
+      - description: Поиск по названию и описанию (1-100 символов)
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Список категорий с пагинацией
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.PaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/dto.CategoryInfo'
+                  type: array
+              type: object
+        "400":
+          description: Ошибка валидации параметров
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Получить список категорий
+      tags:
+      - Категории
+  /events:
+    get:
+      consumes:
+      - application/json
+      description: Получение списка событий с фильтрацией, поиском и пагинацией
+      parameters:
+      - description: 'Тип фильтрации: active, my, past'
+        in: query
+        name: tab
+        type: string
+      - description: 'Номер страницы (по умолчанию: 1)'
+        in: query
+        name: page
+        type: integer
+      - description: 'Количество элементов на странице (по умолчанию: 20, максимум:
+          100)'
+        in: query
+        name: limit
+        type: integer
+      - description: Поиск по названию и описанию (1-200 символов)
+        in: query
+        name: search
+        type: string
+      - collectionFormat: csv
+        description: Фильтр по категориям (массив UUID)
+        in: query
+        items:
+          type: string
+        name: categoryIDs
+        type: array
+      - collectionFormat: csv
+        description: Фильтр по тегам (массив строк)
+        in: query
+        items:
+          type: string
+        name: tags
+        type: array
+      - description: Фильтр по дате начала (YYYY-MM-DD)
+        in: query
+        name: dateFrom
+        type: string
+      - description: Фильтр по дате окончания (YYYY-MM-DD)
+        in: query
+        name: dateTo
+        type: string
+      - description: 'Сортировка: startDate, createdAt, participantsCount (по умолчанию:
+          startDate)'
+        in: query
+        name: sortBy
+        type: string
+      - description: 'Порядок сортировки: ASC, DESC (по умолчанию: ASC)'
+        in: query
+        name: sortOrder
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Список событий с пагинацией
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.PaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/dto.EventResponse'
+                  type: array
+              type: object
+        "400":
+          description: Ошибка валидации параметров
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Получить список событий
+      tags:
+      - События
+    post:
+      consumes:
+      - multipart/form-data
+      description: Создание нового события с возможностью указания категорий, тегов
+        и участников. Можно загрузить изображение файлом или указать URL
+      parameters:
+      - description: Название события
+        in: formData
+        name: title
+        required: true
+        type: string
+      - description: Краткое описание
+        in: formData
+        name: shortDescription
+        type: string
+      - description: Полное описание
+        in: formData
+        name: fullDescription
+        required: true
+        type: string
+      - description: Дата начала (RFC3339)
+        in: formData
+        name: startDate
+        required: true
+        type: string
+      - description: Дата окончания (RFC3339)
+        in: formData
+        name: endDate
+        required: true
+        type: string
+      - description: Изображение события (jpeg, jpg, png, gif, webp, svg, до 10MB)
+        in: formData
+        name: image
+        type: file
+      - description: URL изображения (если не загружается файл)
+        in: formData
+        name: imageURL
+        type: string
+      - description: Информация об оплате
+        in: formData
+        name: paymentInfo
+        type: string
+      - description: Максимальное количество участников
+        in: formData
+        name: maxParticipants
+        type: integer
+      - collectionFormat: csv
+        description: ID категорий (массив UUID)
+        in: formData
+        items:
+          type: string
+        name: categoryIDs
+        type: array
+      - collectionFormat: csv
+        description: Теги (массив строк)
+        in: formData
+        items:
+          type: string
+        name: tags
+        type: array
+      - description: Адрес
+        in: formData
+        name: address
+        type: string
+      - description: Широта
+        in: formData
+        name: latitude
+        type: number
+      - description: Долгота
+        in: formData
+        name: longitude
+        type: number
+      - description: Ссылка на Яндекс.Карты
+        in: formData
+        name: yandexMapLink
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Событие создано
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Создать новое событие
+      tags:
+      - События
+  /events/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Мягкое удаление события (помечается как удаленное)
+      parameters:
+      - description: UUID события
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Событие удалено
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Неверный формат ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Удалить событие
+      tags:
+      - События
+    get:
+      consumes:
+      - application/json
+      description: Получение полной информации о событии, включая участников, отзывы
+        и рейтинг
+      parameters:
+      - description: UUID события
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Детальная информация о событии
+          schema:
+            $ref: '#/definitions/dto.EventDetailResponse'
+        "400":
+          description: Неверный формат ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Доступ запрещен (отклоненное событие)
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Событие не найдено
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Получить детальную информацию о событии
+      tags:
+      - События
+    put:
+      consumes:
+      - application/json
+      description: Обновление данных события (все поля необязательны)
+      parameters:
+      - description: UUID события
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Данные для обновления
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateEventRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Событие обновлено
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Событие не найдено
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Обновить событие
+      tags:
+      - События
+  /events/{id}/export:
+    get:
+      consumes:
+      - application/json
+      description: Экспорт списка участников события в CSV или XLSX формате
+      parameters:
+      - description: UUID события
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Формат экспорта: csv или xlsx (по умолчанию: xlsx)'
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - text/csv
+      responses:
+        "200":
+          description: Файл с участниками
+          schema:
+            type: file
+        "400":
+          description: Неверный формат ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Событие не найдено
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Экспорт участников события
+      tags:
+      - События
+  /events/{id}/join:
+    post:
+      consumes:
+      - application/json
+      description: Подтверждение участия в событии
+      parameters:
+      - description: UUID события
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Участие подтверждено
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Событие не активное, лимит участников, уже участвуете
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Событие не найдено
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Присоединиться к событию
+      tags:
+      - События
+  /events/{id}/leave:
+    delete:
+      consumes:
+      - application/json
+      description: Отмена участия в событии
+      parameters:
+      - description: UUID события
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Участие отменено
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Неверный формат ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Участие не найдено
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Покинуть событие
+      tags:
+      - События
+  /events/{id}/reviews:
+    get:
+      consumes:
+      - application/json
+      description: Получение списка отзывов о событии с пагинацией
+      parameters:
+      - description: UUID события
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Номер страницы (по умолчанию: 1)'
+        in: query
+        name: page
+        type: integer
+      - description: 'Количество элементов на странице (по умолчанию: 20, максимум:
+          100)'
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Список отзывов с пагинацией
+          schema:
+            $ref: '#/definitions/dto.ReviewsResponse'
+        "400":
+          description: Неверный формат ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Получить отзывы о событии
+      tags:
+      - Отзывы
+    post:
+      consumes:
+      - application/json
+      description: Создание отзыва о прошедшем событии (только для участников)
+      parameters:
+      - description: UUID события
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Данные отзыва (рейтинг 1-5, комментарий до 2000 символов)
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            comment:
+              type: string
+            rating:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Отзыв создан
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Ошибка валидации, событие не прошедшее, отзыв уже оставлен
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Вы не участвовали в этом событии
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Событие не найдено
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Создать отзыв о событии
+      tags:
+      - Отзывы
+  /events/{id}/reviews/{reviewId}:
+    delete:
+      consumes:
+      - application/json
+      description: Удаление своего отзыва о событии
+      parameters:
+      - description: UUID события
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: UUID отзыва
+        in: path
+        name: reviewId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Отзыв удален
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Неверный формат ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Отзыв не найден или нет прав на удаление
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Удалить отзыв
+      tags:
+      - Отзывы
+    put:
+      consumes:
+      - application/json
+      description: Обновление своего отзыва о событии
+      parameters:
+      - description: UUID события
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: UUID отзыва
+        in: path
+        name: reviewId
+        required: true
+        type: string
+      - description: Данные для обновления
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            comment:
+              type: string
+            rating:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Отзыв обновлен
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Отзыв не найден или нет прав на изменение
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Обновить отзыв
+      tags:
+      - Отзывы
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: Проверка доступности сервиса и подключения к базе данных
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Сервис работает
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Сервис недоступен
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Проверка здоровья сервиса
+      tags:
+      - Система
+  /user/profile:
+    get:
+      consumes:
+      - application/json
+      description: Получение информации о текущем авторизованном пользователе
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Профиль пользователя
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Пользователь не найден
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Получить профиль пользователя
+      tags:
+      - Пользователь
+    put:
+      consumes:
+      - multipart/form-data
+      description: Обновление профиля пользователя (ФИО, Telegram, аватар)
+      parameters:
+      - description: ФИО пользователя (только русские буквы, 2-100 символов)
+        in: formData
+        name: fullName
+        type: string
+      - description: Telegram username (5-32 символа, латиница, цифры, подчеркивания)
+        in: formData
+        name: telegram
+        type: string
+      - description: Аватар пользователя (jpg, jpeg, png, gif, webp, до 10MB)
+        in: formData
+        name: avatar
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Профиль обновлен
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Требуется авторизация
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Пользователь не найден
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Обновить профиль пользователя
+      tags:
+      - Пользователь
+schemes:
+- http
+securityDefinitions:
+  BearerAuth:
+    description: Введите 'Bearer {токен}' для авторизации. Токен получается при входе
+      или регистрации.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
