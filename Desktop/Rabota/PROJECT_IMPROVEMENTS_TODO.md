@@ -49,10 +49,10 @@
 - [x] Семантический HTML (header, nav, main, section, footer) - добавлены семантические элементы в LandingPage, ResultPage, HomePage
 
 #### 6. Темная тема
-- [ ] Реализация переключения темы (светлая/темная)
-- [ ] Сохранение выбора темы в localStorage
-- [ ] Адаптация всех компонентов под темную тему
-- [ ] Оптимизация контрастности для темной темы
+- [x] Реализация переключения темы (светлая/темная) - ThemeProvider и ThemeToggle реализованы, добавлены в LandingPage и HomePage
+- [x] Сохранение выбора темы в localStorage - реализовано в ThemeProvider
+- [x] Адаптация всех компонентов под темную тему - добавлены dark: классы в Card, Button, ProgressBar, LazyImage, SkeletonLoader, Pagination, улучшены стили в colors.css и index.css, добавлен ThemeToggle в LandingPage и HomePage
+- [x] Оптимизация контрастности для темной темы - добавлены темные стили с правильным контрастом для всех компонентов
 
 ---
 
@@ -164,8 +164,8 @@
 - [x] Оптимизация bundle size (анализ и удаление неиспользуемого кода) - добавлен visualizer
 - [x] Lazy loading для всех роутов (уже реализовано в App.tsx)
 - [x] Code splitting по фичам (manual chunks настроены в vite.config.ts)
-- [ ] Оптимизация изображений (WebP, lazy loading, responsive images)
-- [ ] Мемоизация тяжелых вычислений
+- [x] Оптимизация изображений (WebP, lazy loading, responsive images) - улучшен LazyImage компонент с поддержкой WebP, srcset, sizes, создана утилита imageOptimization.ts
+- [x] Мемоизация тяжелых вычислений - создана утилита memoization.ts с функциями memoize, memoizeWithTTL, debounce, throttle, memoizeAsync
 - [x] Виртуализация длинных списков (react-window уже установлен)
 - [x] Оптимизация GraphQL запросов (батчинг, кеширование) - настроено в apollo.ts
 
