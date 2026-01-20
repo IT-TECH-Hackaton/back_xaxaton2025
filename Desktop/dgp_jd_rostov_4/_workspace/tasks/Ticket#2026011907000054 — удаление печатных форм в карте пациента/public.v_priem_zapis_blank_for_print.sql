@@ -1,0 +1,6 @@
+('tap_new_order_new'::text,'cdpriem'::text,1,'92b1fcd5-56c5-45ed-a442-974fa23b0452'::uuid,'Талон амбулаторного пациента (форма №025-1/у) с 1 сентября'::text,'14ea56e1-d087-4efc-8cf9-08438925fd5d'::uuid),
+('medsoglas_application_2'::text,'cdpriempac'::text,0,'d30594bd-7c02-413c-8e20-91e730d0c59d'::uuid,'Информированное добровольное согласие на медицинское вмешательство (Приложение №2 Приказ МЗ РФ 165н от 04.04.2025)'::text,'14ea56e1-d087-4efc-8cf9-08438925fd5d'::uuid),
+('medotkaz_application_3'::text,'cdpriempac'::text,0,'c146221d-9603-42e1-aa94-641c096aaf50'::uuid,'Отказ от медицинского вмешательства (Приложение №3 Приказ МЗ РФ 165н от 04.04.2025)'::text,'14ea56e1-d087-4efc-8cf9-08438925fd5d'::uuid),
+('titul_new_order_landscape'::text,'cdpriempac'::text,0,'ee796926-c082-416a-a11b-b8168c79e8e0'::uuid,'Титул истории болезни (форма №025/у) с 1 сентября (горизонтальный, с правой стороны)'::text,'14ea56e1-d087-4efc-8cf9-08438925fd5d'::uuid),
+
+--было убрано tap_new_order_new и titul_new_order_landscape по таску 
