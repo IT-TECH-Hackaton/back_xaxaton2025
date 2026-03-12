@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"bekend/models"
 )
 
 func ValidateEmail(email string) bool {
@@ -62,7 +64,7 @@ func ValidateVerificationCode(code string) bool {
 }
 
 func ValidateRole(role string) bool {
-	return role == "Пользователь" || role == "Администратор"
+	return models.IsValidUserRole(models.UserRole(role))
 }
 
 func ValidateUserStatus(status string) bool {

@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 
+	"bekend/config"
 	"bekend/dto"
 	"bekend/models"
 	"bekend/services"
@@ -62,6 +64,10 @@ func (h *PaymentHandler) CreatePayment(c *gin.Context) {
 		}
 		relatedID = &parsed
 	}
+	if paymentType == models.PaymentTypeAdBanner && (req.RelatedID == "" || relatedID == nil) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "relatedID обязателен для оплаты баннера"})
+		return
+	}
 
 	payment, confirmationURL, err := h.yooKassa.CreatePayment(
 		uid,
@@ -96,6 +102,16 @@ func (h *PaymentHandler) CreatePayment(c *gin.Context) {
 // @Success 200 "OK"
 // @Router /payments/webhook/yookassa [post]
 func (h *PaymentHandler) YooKassaWebhook(c *gin.Context) {
+	// Проверка IP whitelist (в prod — WEBHOOK_IP_CHECK=true)
+	if config.AppConfig.WebhookIPCheck {
+		clientIP := c.ClientIP()
+		if !utils.IsYooKassaIP(clientIP) {
+			h.logger.Warn("Webhook: запрос с недоверенного IP", zap.String("ip", clientIP))
+			c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
+			return
+		}
+	}
+
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		h.logger.Error("Ошибка чтения webhook", zap.Error(err))
@@ -103,8 +119,26 @@ func (h *PaymentHandler) YooKassaWebhook(c *gin.Context) {
 		return
 	}
 
+	// Логирование payload для аудита (без чувствительных данных)
+	var audit struct {
+		Type   string `json:"type"`
+		Event  string `json:"event"`
+		Object struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"object"`
+	}
+	if err := json.Unmarshal(body, &audit); err == nil {
+		h.logger.Info("Webhook получен",
+			zap.String("type", audit.Type),
+			zap.String("event", audit.Event),
+			zap.String("object_id", audit.Object.ID),
+			zap.String("object_status", audit.Object.Status),
+			zap.String("client_ip", c.ClientIP()))
+	}
+
 	if err := h.yooKassa.HandleWebhook(body); err != nil {
-		h.logger.Error("Ошибка обработки webhook", zap.Error(err), zap.String("body", string(body)))
+		h.logger.Error("Ошибка обработки webhook", zap.Error(err), zap.String("object_id", audit.Object.ID))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обработки"})
 		return
 	}

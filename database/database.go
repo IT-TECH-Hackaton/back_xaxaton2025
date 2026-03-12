@@ -23,11 +23,12 @@ func createDatabaseIfNotExists() error {
 		zap.String("database", config.AppConfig.DBName))
 
 	dsnPostgres := fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=postgres port=%s sslmode=disable TimeZone=UTC",
+		"host=%s user=%s password=%s dbname=postgres port=%s sslmode=%s TimeZone=UTC",
 		config.AppConfig.DBHost,
 		config.AppConfig.DBUser,
 		config.AppConfig.DBPassword,
 		config.AppConfig.DBPort,
+		config.AppConfig.DBSSLMode,
 	)
 
 	db, err := gorm.Open(postgres.Open(dsnPostgres), &gorm.Config{
@@ -82,12 +83,13 @@ func Connect() {
 	}
 
 	dsn := fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=UTC",
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=UTC",
 		config.AppConfig.DBHost,
 		config.AppConfig.DBUser,
 		config.AppConfig.DBPassword,
 		config.AppConfig.DBName,
 		config.AppConfig.DBPort,
+		config.AppConfig.DBSSLMode,
 	)
 
 	var err error

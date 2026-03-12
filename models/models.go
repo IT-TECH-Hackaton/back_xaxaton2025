@@ -4,7 +4,11 @@ import "gorm.io/gorm"
 
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
+		&Message{},
+		&RefreshToken{},
 		&User{},
+		&AdvertiserRequest{},
+		&AdPricePlan{},
 		&Event{},
 		&EventParticipant{},
 		&EventReview{},
@@ -24,11 +28,12 @@ func AutoMigrate(db *gorm.DB) error {
 		&Payment{},
 		&PromotionPackage{},
 		&EventPromotion{},
+		&AdBanner{},
 	)
 }
 
 func IsValidUserRole(role UserRole) bool {
-	return role == RoleUser || role == RoleAdmin
+	return role == RoleUser || role == RoleAdmin || role == RoleAdvertiser
 }
 
 func IsValidUserStatus(status UserStatus) bool {

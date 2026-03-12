@@ -17,8 +17,12 @@ type Config struct {
 	DBUser       string
 	DBPassword   string
 	DBName       string
-	JWTSecret    string
-	JWTExpiration time.Duration
+	DBSSLMode    string // sslmode для PostgreSQL: disable (dev), require (prod)
+	JWTSecret         string
+	JWTExpiration     time.Duration
+	JWTRefreshExpiration time.Duration
+	CookieSecure      bool
+	CookieSameSite    string
 	EmailHost    string
 	EmailPort    int
 	EmailUser    string
@@ -35,6 +39,7 @@ type Config struct {
 	YooKassaShopID    string // ID магазина в ЮKassa
 	YooKassaSecretKey string // Секретный ключ ЮKassa
 	BackendURL        string // URL бекенда для webhook (например https://api.example.com)
+	WebhookIPCheck    bool   // Проверка IP whitelist для webhook ЮKassa (в prod — true)
 	SeedFull          bool   // Запуск полного сида (100+ пользователей, 100+ афиш) при старте
 }
 
@@ -53,6 +58,7 @@ func LoadConfig() {
 		DBUser:       getEnv("DB_USER", "postgres"),
 		DBPassword:   getEnv("DB_PASSWORD", "postgres"),
 		DBName:       getEnv("DB_NAME", "bekend"),
+		DBSSLMode:    getDBSSLMode(),
 		JWTSecret:    getEnv("JWT_SECRET", ""),
 		EmailHost:    getEnv("EMAIL_HOST", "smtp.yandex.ru"),
 		EmailUser:    getEnv("EMAIL_USER", ""),
@@ -68,15 +74,26 @@ func LoadConfig() {
 		YooKassaShopID:     getEnv("YOOKASSA_SHOP_ID", ""),
 		YooKassaSecretKey:  getEnv("YOOKASSA_SECRET_KEY", ""),
 		BackendURL:         getEnv("BACKEND_URL", "http://localhost:8081"),
+		WebhookIPCheck:     getEnv("WEBHOOK_IP_CHECK", "false") == "true",
 		SeedFull:           getEnv("SEED_FULL", "false") == "true",
 	}
 
-	expirationStr := getEnv("JWT_EXPIRATION", "24h")
+	expirationStr := getEnv("JWT_EXPIRATION", "15m")
 	duration, err := time.ParseDuration(expirationStr)
 	if err != nil {
-		duration = 24 * time.Hour
+		duration = 15 * time.Minute
 	}
 	AppConfig.JWTExpiration = duration
+
+	refreshExpirationStr := getEnv("JWT_REFRESH_EXPIRATION", "168h")
+	refreshDuration, err := time.ParseDuration(refreshExpirationStr)
+	if err != nil {
+		refreshDuration = 7 * 24 * time.Hour
+	}
+	AppConfig.JWTRefreshExpiration = refreshDuration
+
+	AppConfig.CookieSecure = getEnv("COOKIE_SECURE", "false") == "true"
+	AppConfig.CookieSameSite = getEnv("COOKIE_SAME_SITE", "lax")
 
 	port := getEnv("EMAIL_PORT", "465")
 	AppConfig.EmailPort = parseInt(port, 465)
@@ -91,6 +108,17 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// getDBSSLMode — sslmode для PostgreSQL: в production по умолчанию require
+func getDBSSLMode() string {
+	if v := os.Getenv("DB_SSL_MODE"); v != "" {
+		return v
+	}
+	if getEnv("APP_ENV", "development") == "production" {
+		return "require"
+	}
+	return "disable"
 }
 
 func parseInt(s string, defaultValue int) int {

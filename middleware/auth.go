@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"bekend/logger"
+	"bekend/models"
 	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
@@ -81,7 +82,7 @@ func OptionalAuthMiddleware() gin.HandlerFunc {
 func AdminMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, exists := c.Get("role")
-		if !exists || role != "Администратор" {
+		if !exists || role != string(models.RoleAdmin) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Требуются права администратора"})
 			c.Abort()
 			return

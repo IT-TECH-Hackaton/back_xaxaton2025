@@ -15,6 +15,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// GenerateToken создаёт access token (короткоживущий, 15 мин по умолчанию)
 func GenerateToken(userID uuid.UUID, email, role string) (string, error) {
 	claims := &Claims{
 		UserID: userID,

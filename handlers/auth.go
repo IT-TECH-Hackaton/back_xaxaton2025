@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"bekend/config"
 	"bekend/database"
 	"bekend/dto"
 	"bekend/models"
@@ -253,32 +254,24 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 		}
 	}()
 
-	token, err := utils.GenerateToken(user.ID, user.Email, string(user.Role))
+	accessToken, err := h.issueTokensAndSetCookie(c, user)
 	if err != nil {
-		h.logger.Error("Ошибка генерации токена", 
-			zap.Error(err),
-			zap.String("userID", user.ID.String()),
-			zap.String("email", user.Email),
-			zap.String("role", string(user.Role)))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка генерации токена"})
 		return
 	}
 
-	response := dto.AuthResponse{
-		Token: token,
+	h.logger.Info("Регистрация успешно завершена",
+		zap.String("userID", user.ID.String()),
+		zap.String("email", user.Email))
+
+	c.JSON(http.StatusOK, dto.AuthResponse{
+		Token: accessToken,
 		User: dto.UserInfo{
 			ID:       user.ID.String(),
 			FullName: user.FullName,
 			Email:    user.Email,
 			Role:     string(user.Role),
 		},
-	}
-
-	h.logger.Info("Регистрация успешно завершена", 
-		zap.String("userID", user.ID.String()),
-		zap.String("email", user.Email))
-
-	c.JSON(http.StatusOK, response)
+	})
 }
 
 // ResendCode godoc
@@ -384,10 +377,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := utils.GenerateToken(user.ID, user.Email, string(user.Role))
+	accessToken, err := h.issueTokensAndSetCookie(c, user)
 	if err != nil {
-		h.logger.Error("Ошибка генерации токена", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка генерации токена"})
 		return
 	}
 
@@ -395,24 +386,31 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	go h.emailService.SendLoginNotification(user.Email, user.FullName, ipAddress)
 
 	c.JSON(http.StatusOK, dto.AuthResponse{
-		Token: token,
+		Token: accessToken,
 		User: dto.UserInfo{
-			ID:    user.ID.String(),
-			Email: user.Email,
-			Role:  string(user.Role),
+			ID:       user.ID.String(),
+			FullName: user.FullName,
+			Email:    user.Email,
+			Role:     string(user.Role),
 		},
 	})
 }
 
 // Logout godoc
 // @Summary Выход из системы
-// @Description Выход из системы (на клиенте необходимо удалить токен)
+// @Description Выход из системы: инвалидация refresh токена и очистка cookie
 // @Tags Авторизация
 // @Accept json
 // @Produce json
 // @Success 200 {object} map[string]string "Выход выполнен"
 // @Router /auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
+	refreshValue, err := c.Cookie(utils.RefreshCookieName)
+	if err == nil && refreshValue != "" {
+		tokenHash := utils.HashRefreshToken(refreshValue)
+		database.DB.Where("token_hash = ?", tokenHash).Delete(&models.RefreshToken{})
+	}
+	utils.ClearRefreshCookie(c)
 	c.JSON(http.StatusOK, gin.H{"message": "Выход выполнен успешно"})
 }
 
@@ -598,5 +596,94 @@ func (h *AuthHandler) InitDefaultAdmin(c *gin.Context) {
 		"email":    defaultAdminEmail,
 		"password": defaultPassword,
 		"warning":  "Не забудьте изменить пароль по умолчанию!",
+	})
+}
+
+// issueTokensAndSetCookie создаёт access и refresh токены, сохраняет refresh в БД, устанавливает cookie.
+// Возвращает access token и ошибку.
+func (h *AuthHandler) issueTokensAndSetCookie(c *gin.Context, user models.User) (string, error) {
+	accessToken, err := utils.GenerateToken(user.ID, user.Email, string(user.Role))
+	if err != nil {
+		h.logger.Error("Ошибка генерации access токена", zap.Error(err), zap.String("userID", user.ID.String()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка генерации токена"})
+		return "", err
+	}
+
+	refreshValue, err := utils.GenerateRefreshTokenValue()
+	if err != nil {
+		h.logger.Error("Ошибка генерации refresh токена", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка генерации токена"})
+		return "", err
+	}
+
+	rt := models.RefreshToken{
+		UserID:    user.ID,
+		TokenHash: utils.HashRefreshToken(refreshValue),
+		ExpiresAt: time.Now().Add(config.AppConfig.JWTRefreshExpiration),
+	}
+	if err := database.DB.Create(&rt).Error; err != nil {
+		h.logger.Error("Ошибка сохранения refresh токена", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при создании сессии"})
+		return "", err
+	}
+
+	utils.SetRefreshCookie(c, refreshValue)
+	return accessToken, nil
+}
+
+// Refresh godoc
+// @Summary Обновление access токена
+// @Description Обновление access токена по refresh токену из httpOnly cookie
+// @Tags Авторизация
+// @Produce json
+// @Success 200 {object} dto.AuthResponse "Новый access токен"
+// @Failure 401 {object} map[string]string "Refresh токен недействителен"
+// @Router /auth/refresh [post]
+func (h *AuthHandler) Refresh(c *gin.Context) {
+	refreshValue, err := c.Cookie(utils.RefreshCookieName)
+	if err != nil || refreshValue == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+		return
+	}
+
+	tokenHash := utils.HashRefreshToken(refreshValue)
+	var rt models.RefreshToken
+	if err := database.DB.Where("token_hash = ? AND expires_at > ?", tokenHash, time.Now()).First(&rt).Error; err != nil {
+		h.logger.Debug("Refresh токен не найден или истёк", zap.Error(err))
+		utils.ClearRefreshCookie(c)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Сессия истекла. Войдите снова"})
+		return
+	}
+
+	var user models.User
+	if err := database.DB.Where("id = ?", rt.UserID).First(&user).Error; err != nil {
+		database.DB.Delete(&rt)
+		utils.ClearRefreshCookie(c)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Пользователь не найден"})
+		return
+	}
+	if user.Status == models.UserStatusDeleted {
+		database.DB.Delete(&rt)
+		utils.ClearRefreshCookie(c)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Пользователь удалён"})
+		return
+	}
+
+	// Ротация: удаляем старый refresh, создаём новый
+	database.DB.Delete(&rt)
+
+	accessToken, err := h.issueTokensAndSetCookie(c, user)
+	if err != nil {
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.AuthResponse{
+		Token: accessToken,
+		User: dto.UserInfo{
+			ID:       user.ID.String(),
+			FullName: user.FullName,
+			Email:    user.Email,
+			Role:     string(user.Role),
+		},
 	})
 }

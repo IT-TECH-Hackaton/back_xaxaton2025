@@ -155,15 +155,13 @@ func (h *AuthHandler) YandexCallback(c *gin.Context) {
 		database.DB.Save(&user)
 	}
 
-	// Генерируем JWT токен
-	tokenJWT, err := utils.GenerateToken(user.ID, user.Email, string(user.Role))
+	// Устанавливаем refresh cookie (токен в URL не передаём — фронт вызовет /auth/refresh)
+	_, err = h.issueTokensAndSetCookie(c, user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка генерации токена"})
 		return
 	}
 
-	// Перенаправляем на фронтенд с токеном
-	redirectURL := fmt.Sprintf("%s/auth/callback?token=%s&provider=yandex", config.AppConfig.FrontendURL, tokenJWT)
+	redirectURL := fmt.Sprintf("%s/auth/callback?provider=yandex", config.AppConfig.FrontendURL)
 	c.Redirect(http.StatusFound, redirectURL)
 }
 
@@ -320,19 +318,17 @@ func (h *AuthHandler) FakeYandexAuth(c *gin.Context) {
 		database.DB.Save(&user)
 	}
 
-	// Генерируем JWT токен
-	tokenJWT, err := utils.GenerateToken(user.ID, user.Email, string(user.Role))
+	accessToken, err := h.issueTokensAndSetCookie(c, user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка генерации токена"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"token": tokenJWT,
+		"token": accessToken,
 		"user": gin.H{
-			"id":    user.ID,
-			"email": user.Email,
-			"role":  user.Role,
+			"id":       user.ID.String(),
+			"email":   user.Email,
+			"role":    user.Role,
 			"fullName": user.FullName,
 		},
 		"message": "Авторизация через Яндекс выполнена успешно (фейковый режим)",

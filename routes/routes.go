@@ -17,6 +17,30 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
+// resolveCORSOrigins — в production запрещает "*", использует CORS_ALLOW_ORIGINS или FrontendURL
+func resolveCORSOrigins() []string {
+	if config.AppConfig == nil {
+		return []string{"*"}
+	}
+	raw := strings.TrimSpace(config.AppConfig.CORSAllowOrigins)
+	if raw == "" || raw == "*" {
+		if config.AppConfig.AppEnv == "production" {
+			if config.AppConfig.FrontendURL != "" {
+				utils.GetLogger().Warn("CORS: в production CORS_ALLOW_ORIGINS не задан, используется FRONTEND_URL")
+				return []string{config.AppConfig.FrontendURL}
+			}
+			utils.GetLogger().Warn("CORS: в production задайте CORS_ALLOW_ORIGINS или FRONTEND_URL")
+			return []string{}
+		}
+		return []string{"*"}
+	}
+	origins := strings.Split(raw, ",")
+	for i := range origins {
+		origins[i] = strings.TrimSpace(origins[i])
+	}
+	return origins
+}
+
 func SetupRoutes() *gin.Engine {
 	r := gin.Default()
 
@@ -59,15 +83,8 @@ func SetupRoutes() *gin.Engine {
 	r.Static("/uploads", uploadDir)
 
 	corsConfig := cors.DefaultConfig()
-	if config.AppConfig != nil && config.AppConfig.CORSAllowOrigins != "" {
-		origins := strings.Split(config.AppConfig.CORSAllowOrigins, ",")
-		for i := range origins {
-			origins[i] = strings.TrimSpace(origins[i])
-		}
-		corsConfig.AllowOrigins = origins
-	} else {
-		corsConfig.AllowOrigins = []string{"*"}
-	}
+	origins := resolveCORSOrigins()
+	corsConfig.AllowOrigins = origins
 	corsConfig.AllowCredentials = true
 	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}
@@ -80,6 +97,10 @@ func SetupRoutes() *gin.Engine {
 	adminHandler := handlers.NewAdminHandler()
 	uploadHandler := handlers.NewUploadHandler()
 	paymentHandler := handlers.NewPaymentHandler()
+	adBannerHandler := handlers.NewAdBannerHandler()
+	advertiserRequestHandler := handlers.NewAdvertiserRequestHandler()
+	messageHandler := handlers.NewMessageHandler()
+	categoryHandler := handlers.NewCategoryHandler()
 
 	healthHandler := handlers.NewHealthHandler()
 	r.GET("/health", healthHandler.HealthCheck)
@@ -95,6 +116,7 @@ func SetupRoutes() *gin.Engine {
 			auth.POST("/resend-code", middleware.RateLimitMiddleware("3-H"), authHandler.ResendCode)
 			auth.POST("/login", middleware.RateLimitMiddleware("5-M"), authHandler.Login)
 			auth.POST("/logout", authHandler.Logout)
+			auth.POST("/refresh", middleware.RateLimitMiddleware("30-M"), authHandler.Refresh)
 			auth.POST("/forgot-password", middleware.RateLimitMiddleware("3-H"), authHandler.ForgotPassword)
 			auth.POST("/reset-password", middleware.RateLimitMiddleware("5-M"), authHandler.ResetPassword)
 			auth.GET("/yandex", middleware.RateLimitMiddleware("10-M"), authHandler.YandexAuth)
@@ -131,11 +153,38 @@ func SetupRoutes() *gin.Engine {
 			promotion.POST("/purchase", middleware.AuthMiddleware(), middleware.RateLimitMiddleware("10-H"), promotionHandler.PurchasePromotion)
 		}
 
+		advertiser := api.Group("/advertiser")
+		advertiser.Use(middleware.AuthMiddleware())
+		{
+			advertiser.POST("/request", middleware.RateLimitMiddleware("3-H"), advertiserRequestHandler.CreateRequest)
+			advertiser.GET("/request/status", advertiserRequestHandler.GetRequestStatus)
+		}
+
+		ads := api.Group("/ads")
+		{
+			ads.GET("", adBannerHandler.GetActiveBanners)
+			ads.GET("/price-plans", adBannerHandler.GetPricePlans)
+			ads.GET("/my", middleware.AuthMiddleware(), adBannerHandler.GetMyBanners)
+			ads.POST("", middleware.AuthMiddleware(), middleware.RateLimitMiddleware("20-H"), adBannerHandler.CreateBanner)
+			ads.POST("/:id/submit", middleware.AuthMiddleware(), adBannerHandler.SubmitBannerForReview)
+			ads.POST("/:id/impression", adBannerHandler.RecordImpression)
+			ads.POST("/:id/click", adBannerHandler.RecordClick)
+		}
+
 		user := api.Group("/user")
 		user.Use(middleware.AuthMiddleware())
 		{
 			user.GET("/profile", userHandler.GetProfile)
 			user.PUT("/profile", userHandler.UpdateProfile)
+			user.GET("/:id", userHandler.GetUserByID)
+		}
+
+		messages := api.Group("/messages")
+		messages.Use(middleware.AuthMiddleware())
+		{
+			messages.GET("", messageHandler.GetConversations)
+			messages.GET("/:userId", messageHandler.GetMessagesWithUser)
+			messages.POST("", middleware.RateLimitMiddleware("30-M"), messageHandler.SendMessage)
 		}
 
 		events := api.Group("/events")
@@ -199,16 +248,16 @@ func SetupRoutes() *gin.Engine {
 		communityHandler := handlers.NewCommunityHandler()
 		communities := api.Group("/communities")
 		{
-		communities.GET("", communityHandler.GetCommunities)
-		communities.GET("/my", middleware.AuthMiddleware(), communityHandler.GetMyCommunities)
-		communities.GET("/:id", communityHandler.GetCommunity)
-		communities.GET("/:id/members", communityHandler.GetCommunityMembers)
-		communities.POST("", middleware.AuthMiddleware(), communityHandler.CreateCommunity)
-		communities.PUT("/:id", middleware.AuthMiddleware(), communityHandler.UpdateCommunity)
-		communities.DELETE("/:id", middleware.AuthMiddleware(), communityHandler.DeleteCommunity)
-		communities.POST("/:id/join", middleware.AuthMiddleware(), communityHandler.JoinCommunity)
-		communities.DELETE("/:id/leave", middleware.AuthMiddleware(), communityHandler.LeaveCommunity)
-	}
+			communities.GET("", communityHandler.GetCommunities)
+			communities.GET("/my", middleware.AuthMiddleware(), communityHandler.GetMyCommunities)
+			communities.GET("/:id", communityHandler.GetCommunity)
+			communities.GET("/:id/members", communityHandler.GetCommunityMembers)
+			communities.POST("", middleware.AuthMiddleware(), communityHandler.CreateCommunity)
+			communities.PUT("/:id", middleware.AuthMiddleware(), communityHandler.UpdateCommunity)
+			communities.DELETE("/:id", middleware.AuthMiddleware(), communityHandler.DeleteCommunity)
+			communities.POST("/:id/join", middleware.AuthMiddleware(), communityHandler.JoinCommunity)
+			communities.DELETE("/:id/leave", middleware.AuthMiddleware(), communityHandler.LeaveCommunity)
+		}
 
 		admin := api.Group("/admin")
 		admin.Use(middleware.AuthMiddleware())
@@ -230,13 +279,26 @@ func SetupRoutes() *gin.Engine {
 			adminEvents.GET("", adminHandler.GetAdminEvents)
 		}
 
-		categoryHandler := handlers.NewCategoryHandler()
 		adminCategories := admin.Group("/categories")
 		{
 			adminCategories.GET("", categoryHandler.GetCategories)
 			adminCategories.POST("", categoryHandler.CreateCategory)
 			adminCategories.PUT("/:id", categoryHandler.UpdateCategory)
 			adminCategories.DELETE("/:id", categoryHandler.DeleteCategory)
+		}
+
+		adminAdvertiserRequests := admin.Group("/advertiser-requests")
+		{
+			adminAdvertiserRequests.GET("", adminHandler.GetAdvertiserRequests)
+			adminAdvertiserRequests.POST("/:id/approve", adminHandler.ApproveAdvertiserRequest)
+			adminAdvertiserRequests.POST("/:id/reject", adminHandler.RejectAdvertiserRequest)
+		}
+
+		adminBanners := admin.Group("/banners")
+		{
+			adminBanners.GET("", adminHandler.GetAdminBanners)
+			adminBanners.POST("/:id/approve", adminHandler.ApproveBanner)
+			adminBanners.POST("/:id/reject", adminHandler.RejectBanner)
 		}
 	}
 

@@ -377,3 +377,196 @@ func RunSeedFull() {
 
 	log.Info("SeedFull: создано пользователей и афиш", zap.Int("users", len(users)), zap.Int64("events", eventCount))
 }
+
+// EnsureTestAdvertiser — гарантирует, что advertiser@test.local существует с паролем Advertiser123!
+func EnsureTestAdvertiser() {
+	const email = "advertiser@test.local"
+	const password = "Advertiser123!"
+	hash, err := utils.HashPassword(password)
+	if err != nil {
+		logger.GetLogger().Warn("EnsureTestAdvertiser: ошибка хеширования", zap.Error(err))
+		return
+	}
+	var user models.User
+	if err := database.DB.Where("email = ?", email).First(&user).Error; err != nil {
+		user = models.User{
+			ID:            uuid.New(),
+			FullName:      "Тест Рекламодатель",
+			Email:         email,
+			Password:      hash,
+			Role:          models.RoleAdvertiser,
+			Status:        models.UserStatusActive,
+			EmailVerified: true,
+			AuthProvider:  "email",
+		}
+		if err := database.DB.Create(&user).Error; err != nil {
+			logger.GetLogger().Warn("EnsureTestAdvertiser: не удалось создать", zap.Error(err))
+			return
+		}
+		logger.GetLogger().Info("EnsureTestAdvertiser: создан рекламодатель", zap.String("email", email))
+	} else {
+		user.Password = hash
+		user.Role = models.RoleAdvertiser
+		user.Status = models.UserStatusActive
+		user.EmailVerified = true
+		if err := database.DB.Save(&user).Error; err != nil {
+			logger.GetLogger().Warn("EnsureTestAdvertiser: не удалось обновить пароль", zap.Error(err))
+			return
+		}
+		logger.GetLogger().Info("EnsureTestAdvertiser: пароль обновлён", zap.String("email", email))
+	}
+}
+
+// RunSeedAds — создаёт тестового рекламодателя, тарифы и 5 баннеров
+func RunSeedAds() {
+	EnsureTestAdvertiser()
+	// Тарифы на рекламу
+	pricePlans := []models.AdPricePlan{
+		{Name: "1 000 показов", TargetImpressions: 1000, Price: 500, IsActive: true, SortOrder: 1},
+		{Name: "5 000 показов", TargetImpressions: 5000, Price: 2000, IsActive: true, SortOrder: 2},
+		{Name: "10 000 показов", TargetImpressions: 10000, Price: 3500, IsActive: true, SortOrder: 3},
+		{Name: "25 000 показов", TargetImpressions: 25000, Price: 7500, IsActive: true, SortOrder: 4},
+	}
+	for _, p := range pricePlans {
+		var existing models.AdPricePlan
+		if database.DB.Where("target_impressions = ?", p.TargetImpressions).First(&existing).Error != nil {
+			if err := database.DB.Create(&p).Error; err != nil {
+				logger.GetLogger().Warn("SeedAds: не удалось создать тариф", zap.String("name", p.Name), zap.Error(err))
+			}
+		}
+	}
+
+	var advertiser models.User
+	if err := database.DB.Where("email = ?", "advertiser@test.local").First(&advertiser).Error; err != nil {
+		logger.GetLogger().Warn("SeedAds: рекламодатель не найден после EnsureTestAdvertiser", zap.Error(err))
+		return
+	}
+
+	ads := []struct {
+		imageURL string
+		linkURL  string
+		title    string
+		target   int
+		price    float64
+	}{
+		{"https://images.unsplash.com/photo-1557804506-669a67965ba0?w=800&h=400&fit=crop", "https://example.com/business", "Бизнес-конференция 2026", 5000, 1500},
+		{"https://images.unsplash.com/photo-1511578314322-379afb476865?w=800&h=400&fit=crop", "https://example.com/restaurant", "Ресторан «Вкусный вечер» — скидка 20%", 3000, 800},
+		{"https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800&h=400&fit=crop", "https://example.com/coworking", "Коворкинг в центре города", 2000, 500},
+		{"https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&h=400&fit=crop", "https://example.com/analytics", "Курсы по аналитике данных", 4000, 1200},
+		{"https://images.unsplash.com/photo-1542744173-8e7e53415bb0?w=800&h=400&fit=crop", "https://example.com/events", "Платформа для организаторов мероприятий", 6000, 2000},
+	}
+
+	created := 0
+	for _, ad := range ads {
+		var existing models.AdBanner
+		if database.DB.Where("advertiser_id = ? AND title = ?", advertiser.ID, ad.title).First(&existing).Error == nil {
+			continue
+		}
+		banner := models.AdBanner{
+			ID:                uuid.New(),
+			AdvertiserID:      advertiser.ID,
+			ImageURL:          ad.imageURL,
+			LinkURL:           ad.linkURL,
+			Title:             ad.title,
+			TargetImpressions: ad.target,
+			Price:             ad.price,
+			Status:            models.AdBannerStatusActive,
+		}
+		if database.DB.Create(&banner).Error == nil {
+			created++
+		}
+	}
+	if created > 0 {
+		logger.GetLogger().Info("SeedAds: создано баннеров", zap.Int("count", created))
+	}
+}
+
+// RunSeedCommerce — тестовые данные коммерции: заявки на рекламодателя и баннеры на модерации
+func RunSeedCommerce() {
+	log := logger.GetLogger()
+
+	var adminUser models.User
+	if err := database.DB.Where("role = ? AND status = ?", models.RoleAdmin, models.UserStatusActive).First(&adminUser).Error; err != nil {
+		log.Warn("SeedCommerce: администратор не найден, пропуск")
+		return
+	}
+
+	// Заявки на рекламодателя (pending)
+	users := ensureTestUsers()
+	requestComments := []string{
+		"Хочу размещать рекламу своих мероприятий",
+		"Интересует продвижение бизнеса через афишу",
+		"Готов к сотрудничеству по рекламе",
+	}
+	requestsCreated := 0
+	for i, u := range users {
+		if requestsCreated >= 3 {
+			break
+		}
+		if u.Role == models.RoleAdvertiser || u.Role == models.RoleAdmin {
+			continue
+		}
+		var existing models.AdvertiserRequest
+		if database.DB.Where("user_id = ? AND status = ?", u.ID, models.AdvertiserRequestPending).First(&existing).Error == nil {
+			continue
+		}
+		comment := requestComments[i%len(requestComments)]
+		ar := models.AdvertiserRequest{
+			UserID:  u.ID,
+			Status:  models.AdvertiserRequestPending,
+			Comment: comment,
+		}
+		if err := database.DB.Create(&ar).Error; err != nil {
+			log.Warn("SeedCommerce: не удалось создать заявку", zap.String("user", u.Email), zap.Error(err))
+			continue
+		}
+		requestsCreated++
+	}
+	if requestsCreated > 0 {
+		log.Info("SeedCommerce: создано заявок на рекламодателя", zap.Int("count", requestsCreated))
+	}
+
+	// Баннеры на модерации (pending_review)
+	var advertiser models.User
+	if err := database.DB.Where("role = ?", models.RoleAdvertiser).First(&advertiser).Error; err != nil {
+		log.Warn("SeedCommerce: рекламодатель не найден, пропуск баннеров")
+		return
+	}
+
+	pendingBanners := []struct {
+		imageURL string
+		linkURL  string
+		title    string
+		target   int
+		price    float64
+	}{
+		{"https://images.unsplash.com/photo-1505373877841-8d25f7d46678?w=800&h=400&fit=crop", "https://example.com/workshop", "Мастер-класс по фотографии — запись открыта", 2500, 900},
+		{"https://images.unsplash.com/photo-1475721027785-f74eccf877e2?w=800&h=400&fit=crop", "https://example.com/fitness", "Фитнес-клуб «Энергия» — абонемент со скидкой", 4000, 1100},
+	}
+
+	bannersCreated := 0
+	for _, b := range pendingBanners {
+		var existing models.AdBanner
+		if database.DB.Where("advertiser_id = ? AND title = ?", advertiser.ID, b.title).First(&existing).Error == nil {
+			continue
+		}
+		banner := models.AdBanner{
+			ID:                uuid.New(),
+			AdvertiserID:      advertiser.ID,
+			ImageURL:          b.imageURL,
+			LinkURL:           b.linkURL,
+			Title:             b.title,
+			TargetImpressions: b.target,
+			Price:             b.price,
+			Status:            models.AdBannerStatusPendingReview,
+		}
+		if err := database.DB.Create(&banner).Error; err != nil {
+			log.Warn("SeedCommerce: не удалось создать баннер", zap.String("title", b.title), zap.Error(err))
+			continue
+		}
+		bannersCreated++
+	}
+	if bannersCreated > 0 {
+		log.Info("SeedCommerce: создано баннеров на модерации", zap.Int("count", bannersCreated))
+	}
+}

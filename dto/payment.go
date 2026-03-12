@@ -3,7 +3,7 @@ package dto
 // CreatePaymentRequest — запрос на создание платежа
 type CreatePaymentRequest struct {
 	Amount      float64 `json:"amount" binding:"required,gt=0"`
-	PaymentType string  `json:"paymentType" binding:"required,oneof=subscription ticket promotion"`
+	PaymentType string  `json:"paymentType" binding:"required,oneof=subscription ticket promotion ad_banner"`
 	Description string  `json:"description"`
 	RelatedID   string  `json:"relatedID"`   // UUID связанной сущности
 	ReturnURL   string  `json:"returnUrl"`

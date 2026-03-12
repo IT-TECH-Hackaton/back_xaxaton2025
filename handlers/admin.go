@@ -13,6 +13,7 @@ import (
 	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
 	"go.uber.org/zap"
 )
@@ -562,4 +563,230 @@ func (h *AdminHandler) ExportUsers(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при экспорте"})
 		return
 	}
+}
+
+// GetAdvertiserRequests — список заявок на рекламодателя
+func (h *AdminHandler) GetAdvertiserRequests(c *gin.Context) {
+	status := c.Query("status")
+	query := database.DB.Preload("User").Model(&models.AdvertiserRequest{})
+
+	if status != "" && (status == string(models.AdvertiserRequestPending) || status == string(models.AdvertiserRequestApproved) || status == string(models.AdvertiserRequestRejected)) {
+		query = query.Where("status = ?", status)
+	}
+
+	var requests []models.AdvertiserRequest
+	if err := query.Order("created_at DESC").Find(&requests).Error; err != nil {
+		h.logger.Error("GetAdvertiserRequests: ошибка БД", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения заявок"})
+		return
+	}
+
+	result := make([]gin.H, len(requests))
+	for i, r := range requests {
+		result[i] = gin.H{
+			"id":           r.ID.String(),
+			"userId":       r.UserID.String(),
+			"status":       r.Status,
+			"comment":      r.Comment,
+			"adminComment": r.AdminComment,
+			"createdAt":    r.CreatedAt,
+			"updatedAt":    r.UpdatedAt,
+			"user": gin.H{
+				"fullName": r.User.FullName,
+				"email":    r.User.Email,
+			},
+		}
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ApproveAdvertiserRequest — одобрить заявку
+func (h *AdminHandler) ApproveAdvertiserRequest(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
+
+	var ar models.AdvertiserRequest
+	if err := database.DB.First(&ar, "id = ?", id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Заявка не найдена"})
+		return
+	}
+	if ar.Status != models.AdvertiserRequestPending {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Заявка уже рассмотрена"})
+		return
+	}
+
+	ar.Status = models.AdvertiserRequestApproved
+	if err := database.DB.Save(&ar).Error; err != nil {
+		h.logger.Error("ApproveAdvertiserRequest: ошибка сохранения", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения"})
+		return
+	}
+
+	if err := database.DB.Model(&models.User{}).Where("id = ?", ar.UserID).Update("role", models.RoleAdvertiser).Error; err != nil {
+		h.logger.Error("ApproveAdvertiserRequest: ошибка обновления роли", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка назначения роли"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true, "status": ar.Status})
+}
+
+// RejectAdvertiserRequestRequest — тело запроса на отклонение
+type RejectAdvertiserRequestRequest struct {
+	Reason string `json:"reason"`
+}
+
+// RejectAdvertiserRequest — отклонить заявку
+func (h *AdminHandler) RejectAdvertiserRequest(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
+
+	var req RejectAdvertiserRequestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Укажите причину отклонения"})
+		return
+	}
+
+	var ar models.AdvertiserRequest
+	if err := database.DB.First(&ar, "id = ?", id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Заявка не найдена"})
+		return
+	}
+	if ar.Status != models.AdvertiserRequestPending {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Заявка уже рассмотрена"})
+		return
+	}
+
+	ar.Status = models.AdvertiserRequestRejected
+	ar.AdminComment = req.Reason
+	if err := database.DB.Save(&ar).Error; err != nil {
+		h.logger.Error("RejectAdvertiserRequest: ошибка сохранения", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true, "status": ar.Status})
+}
+
+// GetAdminBanners — список баннеров для модерации
+func (h *AdminHandler) GetAdminBanners(c *gin.Context) {
+	status := c.Query("status")
+	query := database.DB.Model(&models.AdBanner{})
+
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+
+	var banners []models.AdBanner
+	if err := query.Order("created_at DESC").Find(&banners).Error; err != nil {
+		h.logger.Error("GetAdminBanners: ошибка БД", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения баннеров"})
+		return
+	}
+
+	result := make([]gin.H, len(banners))
+	for i, b := range banners {
+		item := gin.H{
+			"id":                b.ID.String(),
+			"advertiserId":      b.AdvertiserID.String(),
+			"imageURL":          b.ImageURL,
+			"linkURL":           b.LinkURL,
+			"title":             b.Title,
+			"targetImpressions": b.TargetImpressions,
+			"price":             b.Price,
+			"impressions":       b.Impressions,
+			"clicks":            b.Clicks,
+			"status":            b.Status,
+			"createdAt":         b.CreatedAt,
+		}
+		if b.RejectionReason != "" {
+			item["rejectionReason"] = b.RejectionReason
+		}
+		if b.ApprovedAt != nil {
+			item["approvedAt"] = b.ApprovedAt
+		}
+		result[i] = item
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ApproveBanner — одобрить баннер
+func (h *AdminHandler) ApproveBanner(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
+
+	var banner models.AdBanner
+	if err := database.DB.First(&banner, "id = ?", id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Баннер не найден"})
+		return
+	}
+	if banner.Status != models.AdBannerStatusPendingReview {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Только баннеры на модерации можно одобрить"})
+		return
+	}
+
+	now := time.Now()
+	banner.Status = models.AdBannerStatusApproved
+	banner.ApprovedAt = &now
+	banner.RejectionReason = ""
+	if err := database.DB.Save(&banner).Error; err != nil {
+		h.logger.Error("ApproveBanner: ошибка сохранения", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true, "status": banner.Status})
+}
+
+// RejectBannerRequest — тело запроса на отклонение баннера
+type RejectBannerRequest struct {
+	Reason string `json:"reason"`
+}
+
+// RejectBanner — отклонить баннер
+func (h *AdminHandler) RejectBanner(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
+
+	var req RejectBannerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Укажите причину отклонения"})
+		return
+	}
+
+	var banner models.AdBanner
+	if err := database.DB.First(&banner, "id = ?", id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Баннер не найден"})
+		return
+	}
+	if banner.Status != models.AdBannerStatusPendingReview {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Только баннеры на модерации можно отклонить"})
+		return
+	}
+
+	banner.Status = models.AdBannerStatusRejected
+	banner.RejectionReason = req.Reason
+	if err := database.DB.Save(&banner).Error; err != nil {
+		h.logger.Error("RejectBanner: ошибка сохранения", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true, "status": banner.Status})
 }

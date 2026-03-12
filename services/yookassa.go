@@ -218,6 +218,10 @@ func (s *YooKassaService) HandleWebhook(body []byte) error {
 		if payment.PaymentType == models.PaymentTypePromotion {
 			CreateEventPromotionFromPayment(&payment)
 		}
+		// Активация рекламного баннера при оплате
+		if payment.PaymentType == models.PaymentTypeAdBanner {
+			ActivateAdBannerFromPayment(&payment)
+		}
 	case "canceled":
 		payment.Status = models.PaymentStatusCancelled
 		database.DB.Save(&payment)

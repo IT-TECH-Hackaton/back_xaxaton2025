@@ -357,3 +357,29 @@ func (h *UserHandler) isValidImageFile(buffer []byte, mimeType string, ext strin
 
 	return false
 }
+
+// GetUserByID — публичный профиль пользователя по ID (для переписки)
+func (h *UserHandler) GetUserByID(c *gin.Context) {
+	idParam := c.Param("id")
+	if !utils.ValidateUUID(idParam) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID"})
+		return
+	}
+	targetID, _ := uuid.Parse(idParam)
+	var target models.User
+	if err := database.DB.Where("id = ?", targetID).First(&target).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
+		return
+	}
+	if target.Status == models.UserStatusDeleted {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"uid":      target.ID.String(),
+		"fullName": target.FullName,
+		"mail":     target.Email,
+		"image":    target.AvatarURL,
+		"role":     string(target.Role),
+	})
+}

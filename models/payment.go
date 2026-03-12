@@ -26,6 +26,7 @@ const (
 	PaymentTypeSubscription PaymentType = "subscription"
 	PaymentTypeTicket       PaymentType = "ticket"
 	PaymentTypePromotion    PaymentType = "promotion"
+	PaymentTypeAdBanner     PaymentType = "ad_banner"
 )
 
 // PaymentStatus — статус платежа

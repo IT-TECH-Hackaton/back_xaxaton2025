@@ -10,8 +10,9 @@ import (
 type UserRole string
 
 const (
-	RoleUser  UserRole = "Пользователь"
-	RoleAdmin UserRole = "Администратор"
+	RoleUser        UserRole = "Пользователь"
+	RoleAdmin       UserRole = "Администратор"
+	RoleAdvertiser  UserRole = "Рекламодатель"
 )
 
 type UserStatus string

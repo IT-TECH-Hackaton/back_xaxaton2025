@@ -71,6 +71,8 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 	dateTo := c.Query("dateTo")
 	sortBy := c.DefaultQuery("sortBy", "startDate")
 	sortOrder := c.DefaultQuery("sortOrder", "ASC")
+	latStr := c.Query("latitude")
+	lonStr := c.Query("longitude")
 
 	page := c.DefaultQuery("page", "1")
 	limit := c.DefaultQuery("limit", "20")
@@ -184,7 +186,17 @@ func (h *EventHandler) GetEvents(c *gin.Context) {
 	)
 
 	orderBy := "start_date ASC"
-	if sortBy == "createdAt" {
+	if sortBy == "distance" && latStr != "" && lonStr != "" {
+		if lat, err := strconv.ParseFloat(latStr, 64); err == nil && lat >= -90 && lat <= 90 {
+			if lon, err := strconv.ParseFloat(lonStr, 64); err == nil && lon >= -180 && lon <= 180 {
+				// Haversine: events without coords go last
+				orderBy = fmt.Sprintf(
+					"(CASE WHEN latitude IS NULL OR longitude IS NULL THEN 999999 ELSE (6371 * acos(least(1, cos(radians(%f)) * cos(radians(latitude)) * cos(radians(longitude) - radians(%f)) + sin(radians(%f)) * sin(radians(latitude))))) END) ASC",
+					lat, lon, lat,
+				)
+			}
+		}
+	} else if sortBy == "createdAt" {
 		if sortOrder == "DESC" {
 			orderBy = "created_at DESC"
 		} else {
@@ -353,7 +365,7 @@ func (h *EventHandler) GetEvent(c *gin.Context) {
 		return
 	}
 
-	if event.Status == models.EventStatusRejected && (userID == nil || c.GetString("role") != "Администратор") {
+	if event.Status == models.EventStatusRejected && (userID == nil || c.GetString("role") != string(models.RoleAdmin)) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещен"})
 		return
 	}
@@ -676,7 +688,7 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 	organizerID := userID.(uuid.UUID)
 
 	// Проверка лимита по тарифу (админы не ограничены)
-	if c.GetString("role") != "Администратор" {
+	if c.GetString("role") != string(models.RoleAdmin) {
 		if canCreate, errMsg := services.CanCreateEvent(organizerID); !canCreate {
 			c.JSON(http.StatusForbidden, gin.H{"error": errMsg})
 			return
@@ -820,6 +832,10 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 		return
 	}
 
+	userID, _ := c.Get("userID")
+	uid := userID.(uuid.UUID)
+	role := models.UserRole(c.GetString("role"))
+
 	var req dto.UpdateEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Warn("Неверные данные при обновлении события", zap.Error(err))
@@ -831,6 +847,12 @@ func (h *EventHandler) UpdateEvent(c *gin.Context) {
 	if err := database.DB.Where("id = ?", eventID).First(&event).Error; err != nil {
 		h.logger.Error("Событие не найдено для обновления", zap.String("eventID", eventID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Событие не найдено"})
+		return
+	}
+
+	// Только организатор или администратор может редактировать событие
+	if event.OrganizerID != uid && role != models.RoleAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Только организатор или администратор может редактировать событие"})
 		return
 	}
 
@@ -1059,10 +1081,20 @@ func (h *EventHandler) DeleteEvent(c *gin.Context) {
 		return
 	}
 
+	userID, _ := c.Get("userID")
+	uid := userID.(uuid.UUID)
+	role := models.UserRole(c.GetString("role"))
+
 	var event models.Event
 	if err := database.DB.Where("id = ?", eventID).First(&event).Error; err != nil {
 		h.logger.Error("Событие не найдено для удаления", zap.String("eventID", eventID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Событие не найдено"})
+		return
+	}
+
+	// Только организатор или администратор может удалить событие
+	if event.OrganizerID != uid && role != models.RoleAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Только организатор или администратор может удалить событие"})
 		return
 	}
 

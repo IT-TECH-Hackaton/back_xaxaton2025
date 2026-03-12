@@ -104,6 +104,8 @@ func main() {
 	initDefaultAdmin()
 	services.RunSeed()
 	services.RunSeedFull()
+	services.RunSeedAds()
+	services.RunSeedCommerce()
 
 	cronService := services.NewCronService()
 	cronService.Start()
