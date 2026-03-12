@@ -48,8 +48,8 @@ func LoadConfig() {
 		DBUser:       getEnv("DB_USER", "postgres"),
 		DBPassword:   getEnv("DB_PASSWORD", "postgres"),
 		DBName:       getEnv("DB_NAME", "bekend"),
-		JWTSecret:    getEnv("JWT_SECRET", "change-me-in-production"),
-		EmailHost:    getEnv("EMAIL_HOST", "smtp.gmail.com"),
+		JWTSecret:    getEnv("JWT_SECRET", ""),
+		EmailHost:    getEnv("EMAIL_HOST", "smtp.yandex.ru"),
 		EmailUser:    getEnv("EMAIL_USER", ""),
 		EmailPassword: getEnv("EMAIL_PASSWORD", ""),
 		EmailFrom:    getEnv("EMAIL_FROM", ""),
@@ -69,8 +69,12 @@ func LoadConfig() {
 	}
 	AppConfig.JWTExpiration = duration
 
-	port := getEnv("EMAIL_PORT", "587")
-	AppConfig.EmailPort = parseInt(port, 587)
+	port := getEnv("EMAIL_PORT", "465")
+	AppConfig.EmailPort = parseInt(port, 465)
+
+	if AppConfig.JWTSecret == "" {
+		log.Fatal("FATAL: JWT_SECRET не задан в .env — приложение не может работать без секрета JWT")
+	}
 }
 
 func getEnv(key, defaultValue string) string {

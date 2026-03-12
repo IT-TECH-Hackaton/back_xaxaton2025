@@ -316,6 +316,126 @@ func (h *CommunityHandler) GetCommunityMembers(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (h *CommunityHandler) UpdateCommunity(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+		return
+	}
+
+	communityID := c.Param("id")
+	if !utils.ValidateUUID(communityID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID"})
+		return
+	}
+
+	var community models.MicroCommunity
+	if err := database.DB.Preload("Interests").Where("id = ?", communityID).First(&community).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Сообщество не найдено"})
+		return
+	}
+
+	if community.AdminID != userID.(uuid.UUID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Только администратор сообщества может редактировать его"})
+		return
+	}
+
+	var req dto.UpdateCommunityRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные"})
+		return
+	}
+
+	if req.Name != "" {
+		if !utils.ValidateStringLength(req.Name, 1, 100) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Название должно быть от 1 до 100 символов"})
+			return
+		}
+		community.Name = strings.TrimSpace(req.Name)
+	}
+	if req.Description != "" {
+		community.Description = req.Description
+	}
+	if req.AutoNotify != nil {
+		community.AutoNotify = *req.AutoNotify
+	}
+
+	if req.InterestIDs != nil {
+		var interestUUIDs []uuid.UUID
+		for _, idStr := range req.InterestIDs {
+			if !utils.ValidateUUID(idStr) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID интереса: " + idStr})
+				return
+			}
+			interestUUIDs = append(interestUUIDs, uuid.MustParse(idStr))
+		}
+		var interests []models.Interest
+		if len(interestUUIDs) > 0 {
+			if err := database.DB.Where("id IN ?", interestUUIDs).Find(&interests).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении интересов"})
+				return
+			}
+		}
+		if err := database.DB.Model(&community).Association("Interests").Replace(interests); err != nil {
+			h.logger.Error("Ошибка обновления интересов сообщества", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при обновлении интересов"})
+			return
+		}
+		community.Interests = interests
+	}
+
+	if err := database.DB.Save(&community).Error; err != nil {
+		h.logger.Error("Ошибка обновления сообщества", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при обновлении сообщества"})
+		return
+	}
+
+	if err := database.DB.Preload("Admin").Preload("Interests").Where("id = ?", communityID).First(&community).Error; err == nil {
+		c.JSON(http.StatusOK, h.communityToResponse(community))
+	} else {
+		c.JSON(http.StatusOK, gin.H{"message": "Сообщество обновлено"})
+	}
+}
+
+func (h *CommunityHandler) DeleteCommunity(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+		return
+	}
+
+	communityID := c.Param("id")
+	if !utils.ValidateUUID(communityID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID"})
+		return
+	}
+
+	var community models.MicroCommunity
+	if err := database.DB.Where("id = ?", communityID).First(&community).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Сообщество не найдено"})
+		return
+	}
+
+	if community.AdminID != userID.(uuid.UUID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Только администратор сообщества может удалить его"})
+		return
+	}
+
+	if err := database.DB.Where("community_id = ?", communityID).Delete(&models.CommunityMember{}).Error; err != nil {
+		h.logger.Error("Ошибка удаления участников сообщества", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при удалении сообщества"})
+		return
+	}
+
+	if err := database.DB.Unscoped().Delete(&community).Error; err != nil {
+		h.logger.Error("Ошибка удаления сообщества", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при удалении сообщества"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Сообщество удалено"})
+}
+
 func (h *CommunityHandler) communityToResponse(community models.MicroCommunity) dto.CommunityResponse {
 	interests := make([]dto.InterestInfo, len(community.Interests))
 	for i, interest := range community.Interests {

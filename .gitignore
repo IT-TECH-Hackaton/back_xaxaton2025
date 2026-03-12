@@ -8,8 +8,11 @@
 *.out
 go.work
 bekend
-uploads/
+uploads/*
+!uploads/events
+!uploads/events/*
 frontend-MyAfisha/
 *.md
 !README.md
+!ТЗ_*.md
 

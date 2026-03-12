@@ -94,6 +94,26 @@ func (h *CategoryHandler) GetCategories(c *gin.Context) {
 	})
 }
 
+func (h *CategoryHandler) GetCategoryByID(c *gin.Context) {
+	categoryID := c.Param("id")
+	if !utils.ValidateUUID(categoryID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID категории"})
+		return
+	}
+
+	var category models.Category
+	if err := database.DB.Where("id = ?", categoryID).First(&category).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Категория не найдена"})
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.CategoryInfo{
+		ID:          category.ID.String(),
+		Name:        category.Name,
+		Description: category.Description,
+	})
+}
+
 // CreateCategory godoc
 // @Summary Создать категорию
 // @Description Создание новой категории событий (только для администраторов)

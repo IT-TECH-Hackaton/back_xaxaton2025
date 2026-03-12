@@ -1,5 +1,7 @@
 .env
-uploads/
+uploads/*
+!uploads/events
+!uploads/events/*
 *.go
 !main.go
 !scripts/*.go

@@ -89,10 +89,10 @@ func initDefaultAdmin() {
 
 	logger.GetLogger().Info("✅ Создан администратор по умолчанию",
 		zap.String("email", defaultAdminEmail),
-		zap.String("password", defaultPassword),
 		zap.String("id", admin.ID.String()),
-		zap.String("warning", "⚠️ Не забудьте изменить пароль по умолчанию!"),
+		zap.String("warning", "⚠️ Смените пароль администратора после первого входа!"),
 	)
+	_ = defaultPassword
 }
 
 func main() {
@@ -102,6 +102,7 @@ func main() {
 
 	database.Connect()
 	initDefaultAdmin()
+	services.RunSeed()
 
 	cronService := services.NewCronService()
 	cronService.Start()

@@ -76,6 +76,7 @@ func SetupRoutes() *gin.Engine {
 	authHandler := handlers.NewAuthHandler()
 	userHandler := handlers.NewUserHandler()
 	eventHandler := handlers.NewEventHandler()
+	discoverHandler := handlers.NewDiscoverHandler()
 	adminHandler := handlers.NewAdminHandler()
 	uploadHandler := handlers.NewUploadHandler()
 
@@ -117,6 +118,8 @@ func SetupRoutes() *gin.Engine {
 
 		events := api.Group("/events")
 		{
+			events.GET("/hot", discoverHandler.GetHotEvents)
+			events.GET("/recommended", middleware.AuthMiddleware(), discoverHandler.GetRecommendedEvents)
 			events.GET("", middleware.OptionalAuthMiddleware(), eventHandler.GetEvents)
 			events.GET("/:id", middleware.OptionalAuthMiddleware(), eventHandler.GetEvent)
 			events.POST("", middleware.AuthMiddleware(), eventHandler.CreateEvent)
@@ -174,14 +177,16 @@ func SetupRoutes() *gin.Engine {
 		communityHandler := handlers.NewCommunityHandler()
 		communities := api.Group("/communities")
 		{
-			communities.GET("", communityHandler.GetCommunities)
-			communities.GET("/:id", communityHandler.GetCommunity)
-			communities.GET("/:id/members", communityHandler.GetCommunityMembers)
-			communities.POST("", middleware.AuthMiddleware(), communityHandler.CreateCommunity)
-			communities.POST("/:id/join", middleware.AuthMiddleware(), communityHandler.JoinCommunity)
-			communities.DELETE("/:id/leave", middleware.AuthMiddleware(), communityHandler.LeaveCommunity)
-			communities.GET("/my", middleware.AuthMiddleware(), communityHandler.GetMyCommunities)
-		}
+		communities.GET("", communityHandler.GetCommunities)
+		communities.GET("/my", middleware.AuthMiddleware(), communityHandler.GetMyCommunities)
+		communities.GET("/:id", communityHandler.GetCommunity)
+		communities.GET("/:id/members", communityHandler.GetCommunityMembers)
+		communities.POST("", middleware.AuthMiddleware(), communityHandler.CreateCommunity)
+		communities.PUT("/:id", middleware.AuthMiddleware(), communityHandler.UpdateCommunity)
+		communities.DELETE("/:id", middleware.AuthMiddleware(), communityHandler.DeleteCommunity)
+		communities.POST("/:id/join", middleware.AuthMiddleware(), communityHandler.JoinCommunity)
+		communities.DELETE("/:id/leave", middleware.AuthMiddleware(), communityHandler.LeaveCommunity)
+	}
 
 		admin := api.Group("/admin")
 		admin.Use(middleware.AuthMiddleware())
@@ -217,6 +222,7 @@ func SetupRoutes() *gin.Engine {
 	categories := api.Group("/categories")
 	{
 		categories.GET("", categoryHandler.GetCategories)
+		categories.GET("/:id", categoryHandler.GetCategoryByID)
 	}
 	}
 

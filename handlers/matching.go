@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 
 	"bekend/database"
 	"bekend/dto"
 	"bekend/models"
+	"bekend/services"
 	"bekend/utils"
 
 	"github.com/gin-gonic/gin"
@@ -14,12 +16,14 @@ import (
 )
 
 type MatchingHandler struct {
-	logger *zap.Logger
+	logger       *zap.Logger
+	emailService *services.EmailService
 }
 
 func NewMatchingHandler() *MatchingHandler {
 	return &MatchingHandler{
-		logger: utils.GetLogger(),
+		logger:       utils.GetLogger(),
+		emailService: services.NewEmailService(),
 	}
 }
 
@@ -295,6 +299,27 @@ func (h *MatchingHandler) AcceptMatchRequest(c *gin.Context) {
 	toMatching.Status = models.MatchStatusFound
 	database.DB.Save(&toMatching)
 
+	var fromUser models.User
+	var event models.Event
+	if err := database.DB.Where("id = ?", request.FromUserID).First(&fromUser).Error; err == nil {
+		if err := database.DB.Where("id = ?", request.EventID).First(&event).Error; err == nil {
+			go func() {
+				subject := fmt.Sprintf("Ваш запрос на компанию принят — %s", event.Title)
+				body := fmt.Sprintf(`<html><body style="font-family:Arial,sans-serif;color:#333">
+<div style="max-width:600px;margin:0 auto;padding:20px">
+<h2 style="color:#28a745">Запрос принят!</h2>
+<p>Здравствуйте, <strong>%s</strong>!</p>
+<p>Пользователь принял ваш запрос на совместное посещение события <strong>%s</strong>.</p>
+<p>Вы можете связаться друг с другом и договориться о встрече.</p>
+</div></body></html>`, fromUser.FullName, event.Title)
+				if sendErr := h.emailService.SendEmail(fromUser.Email, subject, body); sendErr != nil {
+					h.logger.Warn("Не удалось отправить уведомление об принятии запроса",
+						zap.String("to", fromUser.Email), zap.Error(sendErr))
+				}
+			}()
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Запрос принят"})
 }
 
@@ -327,6 +352,27 @@ func (h *MatchingHandler) RejectMatchRequest(c *gin.Context) {
 		h.logger.Error("Ошибка отклонения запроса", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при отклонении запроса"})
 		return
+	}
+
+	var fromUser models.User
+	var event models.Event
+	if err := database.DB.Where("id = ?", request.FromUserID).First(&fromUser).Error; err == nil {
+		if err := database.DB.Where("id = ?", request.EventID).First(&event).Error; err == nil {
+			go func() {
+				subject := fmt.Sprintf("Ваш запрос на компанию отклонён — %s", event.Title)
+				body := fmt.Sprintf(`<html><body style="font-family:Arial,sans-serif;color:#333">
+<div style="max-width:600px;margin:0 auto;padding:20px">
+<h2 style="color:#dc3545">Запрос отклонён</h2>
+<p>Здравствуйте, <strong>%s</strong>!</p>
+<p>К сожалению, ваш запрос на совместное посещение события <strong>%s</strong> был отклонён.</p>
+<p>Не расстраивайтесь — вы можете найти других участников!</p>
+</div></body></html>`, fromUser.FullName, event.Title)
+				if sendErr := h.emailService.SendEmail(fromUser.Email, subject, body); sendErr != nil {
+					h.logger.Warn("Не удалось отправить уведомление об отклонении запроса",
+						zap.String("to", fromUser.Email), zap.Error(sendErr))
+				}
+			}()
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Запрос отклонен"})

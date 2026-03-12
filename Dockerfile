@@ -16,6 +16,7 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 COPY --from=builder /app/bekend .
+COPY --from=builder /app/uploads/events ./uploads/events
 
 EXPOSE 8080
 
