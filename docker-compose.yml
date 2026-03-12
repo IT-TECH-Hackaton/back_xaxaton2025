@@ -21,22 +21,12 @@ services:
     container_name: bekend-app
     ports:
       - "8081:8080"
+    env_file:
+      - .env
     environment:
-      APP_PORT: 8080
-      APP_ENV: production
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: bekend
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
-      JWT_EXPIRATION: 24h
-      EMAIL_HOST: ${EMAIL_HOST:-smtp.yandex.ru}
-      EMAIL_PORT: ${EMAIL_PORT:-465}
-      EMAIL_USER: ${EMAIL_USER}
-      EMAIL_PASSWORD: ${EMAIL_PASSWORD}
-      EMAIL_FROM: ${EMAIL_FROM}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      APP_ENV: ${APP_ENV:-development}
     depends_on:
       postgres:
         condition: service_healthy
