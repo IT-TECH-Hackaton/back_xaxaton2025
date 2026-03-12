@@ -10,12 +10,12 @@ import (
 func SetRefreshCookie(c *gin.Context, token string) {
 	maxAge := int(config.AppConfig.JWTRefreshExpiration.Seconds())
 	c.SetSameSite(sameSiteMode(config.AppConfig.CookieSameSite))
-	c.SetCookie(RefreshCookieName, token, maxAge, "/api", "", config.AppConfig.CookieSecure, true, false)
+	c.SetCookie(RefreshCookieName, token, maxAge, "/api", "", config.AppConfig.CookieSecure, true)
 }
 
 func ClearRefreshCookie(c *gin.Context) {
 	c.SetSameSite(sameSiteMode(config.AppConfig.CookieSameSite))
-	c.SetCookie(RefreshCookieName, "", -1, "/api", "", config.AppConfig.CookieSecure, true, false)
+	c.SetCookie(RefreshCookieName, "", -1, "/api", "", config.AppConfig.CookieSecure, true)
 }
 
 func sameSiteMode(s string) http.SameSite {

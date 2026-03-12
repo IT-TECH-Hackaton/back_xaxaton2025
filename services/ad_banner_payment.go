@@ -5,8 +5,6 @@ import (
 
 	"bekend/database"
 	"bekend/models"
-
-	"github.com/google/uuid"
 )
 
 // ActivateAdBannerFromPayment активирует баннер после успешной оплаты
