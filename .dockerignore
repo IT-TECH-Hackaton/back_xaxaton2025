@@ -1,0 +1,11 @@
+.env
+uploads/*
+!uploads/events
+!uploads/events/*
+*.go
+!main.go
+!scripts/*.go
+.git
+.gitignore
+README.md
+
